@@ -5,6 +5,7 @@ from utils import *
 def get_mserv_distri(edge_nodes: list) -> dict:
     """
     统计各微服务的分布情况，即：某个微服务都有哪些节点上有
+    return: dict，以微服务序号为键，以对应边缘节点list为值
     """
     mserv_distribution = {}
     for node in edge_nodes:
@@ -34,9 +35,25 @@ def random_mserv_place(edge_nodes: list, mservs: list) -> None:
     print_mserv_place_state(edge_nodes)
 
 
-def random_task_routing(edge_nodes: list) -> None:
+def random_task_routing(edge_nodes: list, mservs: list, users: list, channel: dict) -> None:
     mserv_distri = get_mserv_distri(edge_nodes)  # 统计各微服务的分布节点
-    # TODO
+    # 随机寻找路径
+    total_makespan = 0
+    for user in users:
+        # 遍历所有用户请求
+        for req_mserv_num in user.mserv_dependency:
+            chosen_node = random.choice(mserv_distri[req_mserv_num])
+            # 检查
+            for mserv in chosen_node.placed_mservs:
+                if mserv.num == req_mserv_num:
+                    break
+            else:
+                raise Exception("程序有误，在mserv_distribution[m]中选取的节点，没有找到对应的微服务m")
+            user.routing_route.append(chosen_node)
+        user.calc_makespan(mservs, channel)
+        user.print_makespan()
+        total_makespan += user.makespan
+    print(f"总完成时间：{total_makespan}")
 
 
 def baseline_mserv_place(edge_nodes: list, mservs: list, users: list, channel: dict) -> None:

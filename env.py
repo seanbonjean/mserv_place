@@ -7,6 +7,7 @@ def random_algo(data_path: str) -> None:
     random.seed(77)
     edgenode_list, microservice_list, user_list, channelrate_dict = load_data(data_path)
     random_mserv_place(edgenode_list, microservice_list)
+    random_task_routing(edgenode_list, microservice_list, user_list, channelrate_dict)
 
 
 def baseline_algo(data_path: str) -> None:
