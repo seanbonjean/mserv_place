@@ -17,7 +17,7 @@ def load_data(datapath: str) -> tuple:
     edgenode_list = []
     for i in range(1, sheet.nrows):
         line = sheet.row_values(i)
-        edgenode_list.append(EdgeNode(line[1], line[2]))
+        edgenode_list.append(EdgeNode(int(line[0]), line[1], line[2]))
 
     sheet = data.sheet_by_name("MicroService")
     microservice_list = []
@@ -31,7 +31,7 @@ def load_data(datapath: str) -> tuple:
     for i in range(1, sheet1.nrows):
         line = sheet1.row_values(i)
         mserv_dep = sheet2.row_values(i)
-        user_list.append(User(line[1], int(line[2]), list(map(int, mserv_dep[1:]))))
+        user_list.append(User(int(line[0]), line[1], int(line[2]), list(map(int, mserv_dep[1:]))))
 
     sheet = data.sheet_by_name("channel_rate")
     channelrate_dict = {}

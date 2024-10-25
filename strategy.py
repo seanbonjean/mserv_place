@@ -1,4 +1,17 @@
 import random
+from utils import *
+
+
+def get_mserv_distri(edge_nodes: list) -> dict:
+    """
+    统计各微服务的分布情况，即：某个微服务都有哪些节点上有
+    """
+    mserv_distribution = {}
+    for node in edge_nodes:
+        for mserv in node.placed_mserv:
+            mserv_distribution.setdefault(mserv.num, [])
+            mserv_distribution[mserv.num].append(node)
+    return mserv_distribution
 
 
 def random_mserv_place(edge_nodes: list, mservs: list) -> None:
@@ -18,6 +31,12 @@ def random_mserv_place(edge_nodes: list, mservs: list) -> None:
                     if edge_node.place_mserv(mserv):
                         return
                 raise Exception("没有足够的边缘节点来放置微服务")
+    print_mserv_place_state(edge_nodes)
+
+
+def random_task_routing(edge_nodes: list) -> None:
+    mserv_distri = get_mserv_distri(edge_nodes)  # 统计各微服务的分布节点
+    # TODO
 
 
 def baseline_mserv_place(edge_nodes: list, mservs: list, users: list, channel: dict) -> None:
@@ -41,35 +60,71 @@ def baseline_mserv_place(edge_nodes: list, mservs: list, users: list, channel: d
         if mserv_freq == 0:
             print(f"注意：微服务{mserv_num}未被任何用户使用！")
         elif mserv_freq == 1:
-            singleuser_mservs.append(
-                (mserv_num, mservs[mserv_num], mserv_lastseen_user[mserv_num]))  # 记录微服务序号、微服务对象、对应的唯一用户对象组成的元组
+            singleuser_mservs.append((mservs[mserv_num], mserv_lastseen_user[mserv_num]))  # 记录微服务对象和对应的唯一用户对象组成的元组
         elif mserv_freq > 1:
-            multiuser_mservs.append((mserv_num, mservs[mserv_num], mserv_freq))  # 记录微服务序号、微服务对象、对应的频数组成的元组
+            multiuser_mservs.append((mservs[mserv_num], mserv_freq))  # 记录微服务对象和对应的频数组成的元组
         else:
             raise Exception("微服务频数统计错误")
     # 频数=1的微服务放置
-    for mserv_num, mserv, user in singleuser_mservs:
+    for mserv, user in singleuser_mservs:
         if not edge_nodes[user.serv_node].place_mserv(mserv):  # 如果用户所在边缘节点放不下，就放在最近放得下的边缘节点
-            alternative_nodes = sorted(enumerate(edge_nodes),
-                                       key=lambda x: channel[(user.serv_node, x[0])],
+            alternative_nodes = sorted(edge_nodes,
+                                       key=lambda x: channel[(user.serv_node, x.num)],
                                        reverse=True)  # 按照与用户所在边缘节点的传输速率进行排序
-            for node_num, node in alternative_nodes:
-                if user.serv_node != node_num:  # 不重复往用户所在边缘节点放
+            for node in alternative_nodes:
+                if user.serv_node != node.num:  # 不重复往用户所在边缘节点放
                     if node.place_mserv(mserv):
                         break
             else:
                 raise Exception("没有足够的边缘节点来放置微服务")
     # 频数>1的微服务放置
-    sorted_nodes = sorted(enumerate(edge_nodes), key=lambda x: x[1].computing_power, reverse=True)  # 按照算力最大的方式greedy
-    for mserv_num, mserv, mserv_freq in multiuser_mservs:
-        place_count = (mserv_freq - 2) // 3 + 1  # 根据频数分段决定放置数量
+    sorted_nodes = sorted(edge_nodes, key=lambda x: x.computing_power, reverse=True)  # 按照算力最大的方式greedy
+    for mserv, mserv_freq in multiuser_mservs:
+        place_count = 2  # 根据频数分段决定放置数量
         # greedy放置
         node_pointer = 0  # 指向欲放置的边缘节点，避免重复检测节点是否放得下（多个同样的微服务，上一个在前几个节点已经放不下了，这个肯定也放不下，不用重复检测）
         while place_count > 0:
-            node_num, node = sorted_nodes[node_pointer]
+            node = sorted_nodes[node_pointer]
             if node.place_mserv(mserv):
                 place_count -= 1
             else:
                 node_pointer += 1
             if node_pointer >= len(edge_nodes):
                 raise Exception("没有足够的边缘节点来放置微服务")
+    print_mserv_place_state(edge_nodes)
+
+
+def baseline_task_routing(edge_nodes: list, mservs: list, users: list, channel: dict) -> None:
+    """
+    基线解，寻找距离最近的微服务
+    """
+    mserv_distri = get_mserv_distri(edge_nodes)  # 统计各微服务的分布节点
+    # 寻找距离最近
+    total_makespan = 0
+    for user in users:
+        prev_node_num = user.serv_node  # 记录上一个节点编号，即数据当前停留在的节点
+        # 遍历所有用户请求
+        for req_mserv_num in user.mserv_dependency:
+            is_routed = False
+            # 先检查上个节点本地有没有这个微服务
+            for mserv in edge_nodes[prev_node_num].placed_mserv:
+                if mserv.num == req_mserv_num:
+                    user.routing_route.append(edge_nodes[prev_node_num])
+                    is_routed = True
+                    break
+            if is_routed:
+                continue
+            # 如果上个节点本地没有，则寻找距离最近的微服务所在节点
+            chosen_node = max(mserv_distri[req_mserv_num], key=lambda x: channel[(prev_node_num, x.num)])
+            # 检查
+            for mserv in chosen_node.placed_mserv:
+                if mserv.num == req_mserv_num:
+                    break
+            else:
+                raise Exception("程序有误，在mserv_distribution[m]中选取的节点，没有找到对应的微服务m")
+            user.routing_route.append(chosen_node)
+            prev_node_num = chosen_node.num
+        user.calc_makespan(mservs, channel)
+        user.print_makespan()
+        total_makespan += user.makespan
+    print(f"总完成时间：{total_makespan}")
