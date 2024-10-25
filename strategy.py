@@ -32,13 +32,11 @@ def random_mserv_place(edge_nodes: list, mservs: list) -> None:
                     if edge_node.place_mserv(mserv):
                         return
                 raise Exception("没有足够的边缘节点来放置微服务")
-    print_mserv_place_state(edge_nodes)
 
 
 def random_task_routing(edge_nodes: list, mservs: list, users: list, channel: dict) -> None:
     mserv_distri = get_mserv_distri(edge_nodes)  # 统计各微服务的分布节点
     # 随机寻找路径
-    total_makespan = 0
     for user in users:
         # 遍历所有用户请求
         for req_mserv_num in user.mserv_dependency:
@@ -52,8 +50,6 @@ def random_task_routing(edge_nodes: list, mservs: list, users: list, channel: di
             user.routing_route.append(chosen_node)
         user.calc_makespan(mservs, channel)
         user.print_makespan()
-        total_makespan += user.makespan
-    print(f"总完成时间：{total_makespan}")
 
 
 def baseline_mserv_place(edge_nodes: list, mservs: list, users: list, channel: dict) -> None:
@@ -107,8 +103,6 @@ def baseline_mserv_place(edge_nodes: list, mservs: list, users: list, channel: d
         else:
             raise Exception("没有足够的边缘节点来放置微服务")
 
-    print_mserv_place_state(edge_nodes)
-
 
 def baseline_task_routing(edge_nodes: list, mservs: list, users: list, channel: dict) -> None:
     """
@@ -116,7 +110,6 @@ def baseline_task_routing(edge_nodes: list, mservs: list, users: list, channel: 
     """
     mserv_distri = get_mserv_distri(edge_nodes)  # 统计各微服务的分布节点
     # 寻找距离最近
-    total_makespan = 0
     for user in users:
         prev_node_num = user.serv_node  # 记录上一个节点编号，即数据当前停留在的节点
         # 遍历所有用户请求
@@ -142,5 +135,3 @@ def baseline_task_routing(edge_nodes: list, mservs: list, users: list, channel: 
             prev_node_num = chosen_node.num
         user.calc_makespan(mservs, channel)
         user.print_makespan()
-        total_makespan += user.makespan
-    print(f"总完成时间：{total_makespan}")
