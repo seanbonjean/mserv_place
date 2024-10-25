@@ -86,16 +86,20 @@ class EdgeNode:
         self.memory = memory  # 内存大小(GB)
 
         self.memory_used = 0  # 已使用的内存大小
-        self.placed_mserv = []  # 放置在该边缘节点的微服务列表
+        self.placed_mservs = []  # 放置在该边缘节点的微服务列表
 
     def place_mserv(self, mserv: MicroService) -> bool:
         """
         放置微服务的动作，返回True才是放置成功
         """
+        # 判断是否已有相同微服务放置在节点上
+        for placed_mserv in self.placed_mservs:
+            if mserv.num == placed_mserv.num:
+                return False
         # 判断内存容量是否满足放置条件
-        self.memory_used = sum(map(lambda x: x.memory_demand, self.placed_mserv))
+        self.memory_used = sum(map(lambda x: x.memory_demand, self.placed_mservs))
         if self.memory - self.memory_used >= mserv.memory_demand:
-            self.placed_mserv.append(mserv)
+            self.placed_mservs.append(mserv)
             self.memory_used += mserv.memory_demand
             return True
         return False

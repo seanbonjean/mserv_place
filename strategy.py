@@ -8,7 +8,7 @@ def get_mserv_distri(edge_nodes: list) -> dict:
     """
     mserv_distribution = {}
     for node in edge_nodes:
-        for mserv in node.placed_mserv:
+        for mserv in node.placed_mservs:
             mserv_distribution.setdefault(mserv.num, [])
             mserv_distribution[mserv.num].append(node)
     return mserv_distribution
@@ -80,17 +80,16 @@ def baseline_mserv_place(edge_nodes: list, mservs: list, users: list, channel: d
     # 频数>1的微服务放置
     sorted_nodes = sorted(edge_nodes, key=lambda x: x.computing_power, reverse=True)  # 按照算力最大的方式greedy
     for mserv, mserv_freq in multiuser_mservs:
-        place_count = 2  # 根据频数分段决定放置数量
+        place_count = 2  # 根据频数决定放置数量
         # greedy放置
-        node_pointer = 0  # 指向欲放置的边缘节点，避免重复检测节点是否放得下（多个同样的微服务，上一个在前几个节点已经放不下了，这个肯定也放不下，不用重复检测）
-        while place_count > 0:
-            node = sorted_nodes[node_pointer]
+        for node in sorted_nodes:
             if node.place_mserv(mserv):
                 place_count -= 1
-            else:
-                node_pointer += 1
-            if node_pointer >= len(edge_nodes):
-                raise Exception("没有足够的边缘节点来放置微服务")
+            if place_count == 0:
+                break
+        else:
+            raise Exception("没有足够的边缘节点来放置微服务")
+
     print_mserv_place_state(edge_nodes)
 
 
@@ -107,7 +106,7 @@ def baseline_task_routing(edge_nodes: list, mservs: list, users: list, channel: 
         for req_mserv_num in user.mserv_dependency:
             is_routed = False
             # 先检查上个节点本地有没有这个微服务
-            for mserv in edge_nodes[prev_node_num].placed_mserv:
+            for mserv in edge_nodes[prev_node_num].placed_mservs:
                 if mserv.num == req_mserv_num:
                     user.routing_route.append(edge_nodes[prev_node_num])
                     is_routed = True
@@ -117,7 +116,7 @@ def baseline_task_routing(edge_nodes: list, mservs: list, users: list, channel: 
             # 如果上个节点本地没有，则寻找距离最近的微服务所在节点
             chosen_node = max(mserv_distri[req_mserv_num], key=lambda x: channel[(prev_node_num, x.num)])
             # 检查
-            for mserv in chosen_node.placed_mserv:
+            for mserv in chosen_node.placed_mservs:
                 if mserv.num == req_mserv_num:
                     break
             else:
