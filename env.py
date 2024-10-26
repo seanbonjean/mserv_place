@@ -1,6 +1,7 @@
 import random
-from values import *
+from values import load_data
 from strategy import *
+from gurobi_solver import gurobi_solve
 
 
 def random_algo(data_path: str) -> None:
@@ -18,3 +19,8 @@ def baseline_algo(data_path: str) -> None:
     print_mserv_place_state(edgenode_list)
     baseline_task_routing(edgenode_list, microservice_list, user_list, channelrate_dict)
     print_objective(edgenode_list, user_list)
+
+
+def gurobi_algo(data_path: str) -> None:
+    edgenode_list, microservice_list, user_list, channelrate_dict = load_data(data_path)
+    gurobi_solve(edgenode_list, microservice_list, user_list, channelrate_dict)

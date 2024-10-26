@@ -1,3 +1,5 @@
 .idea
 __pycache__
+model.rlp
 data/realworld_BS/realworld_BS.xls
+data/rand_gen/rand.txt
