@@ -31,7 +31,8 @@ def load_data(datapath: str) -> tuple:
     for i in range(1, sheet1.nrows):
         line = sheet1.row_values(i)
         mserv_dep = sheet2.row_values(i)
-        mserv_dep = mserv_dep[:mserv_dep.index('')]
+        if '' in mserv_dep:
+            mserv_dep = mserv_dep[:mserv_dep.index('')]
         user_list.append(User(int(line[0]), line[1], int(line[2]), list(map(int, mserv_dep[1:]))))
 
     sheet = data.sheet_by_name("channel_rate")
