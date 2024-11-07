@@ -1,6 +1,6 @@
 class CONSTANTS:
-    MAX_MAKESPAN = 200000  # 各任务的允许的最大完成时间(Th_max)
-    MAX_DEPLOY_COST = 200  # 部署微服务的允许的最大成本(C_max)
+    MAX_MAKESPAN = 200  # 各任务的允许的最大完成时间(Th_max)
+    MAX_DEPLOY_COST = 1000  # 部署微服务的允许的最大成本(C_max)
 
 
 import xlrd as rd, xlwt as wt

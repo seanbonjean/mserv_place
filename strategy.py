@@ -1,5 +1,6 @@
 import random
 from utils import *
+from values import CONSTANTS
 
 
 def get_mserv_distri(edge_nodes: list) -> dict:
@@ -92,13 +93,23 @@ def baseline_mserv_place(edge_nodes: list, mservs: list, users: list, channel: d
                 raise Exception("没有足够的边缘节点来放置微服务")
     # 频数>1的微服务放置
     sorted_nodes = sorted(edge_nodes, key=lambda x: x.computing_power, reverse=True)  # 按照算力最大的方式greedy
+    # 首先每种微服务都至少放置1个
     for mserv, mserv_freq in multiuser_mservs:
-        place_count = 2  # 根据频数决定放置数量
-        # greedy放置
         for node in sorted_nodes:
             if node.place_mserv(mserv):
-                place_count -= 1
-            if place_count == 0:
+                break
+    # 再根据剩余cost裕度尽量多放
+    for mserv, mserv_freq in multiuser_mservs:
+        place_count = 2 - 1  # 根据频数决定放置数量
+        # greedy放置
+        for node in sorted_nodes:
+            current_cost = sum(map(lambda x: sum(map(lambda y: y.place_cost, x.placed_mservs)), edge_nodes))
+            if CONSTANTS.MAX_DEPLOY_COST - current_cost >= mserv.place_cost:
+                if node.place_mserv(mserv):
+                    place_count -= 1
+                if place_count == 0:
+                    break
+            else:
                 break
         else:
             raise Exception("没有足够的边缘节点来放置微服务")
