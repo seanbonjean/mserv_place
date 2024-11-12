@@ -1,8 +1,10 @@
+import itertools
 import math
 import random
 import time
 from gurobipy import *
 from values import CONSTANTS
+import FuzzyAHP as fahp
 
 
 def benders_solve(edge_nodes: list, mservs: list, users: list, channel: dict) -> None:
@@ -62,21 +64,101 @@ def benders_solve(edge_nodes: list, mservs: list, users: list, channel: dict) ->
         elif mserv_freq == 1:
             model_m.addConstr(quicksum(x[(mserv_num, k)] for k in range(edgenode_count)) == 1)
 
-    """
     # !!!新：heuristic initial cut
+    # Step1: 计算global factor
     user_distri = {}  # 统计边缘节点下属用户情况
     for user in users:
         user_distri.setdefault(user.serv_node, [])
         user_distri[user.serv_node].append(user)
-    mserv_sets = [set() for _ in range(edgenode_count)]  # 统计各边缘节点上有用户请求到的微服务
+    mserv_sets = [set() for _ in range(edgenode_count)]  # 统计各边缘节点上有用户请求到的微服务，第一维是边缘节点序号，第二维是微服务序号（set集合）
     for node_num, node_users in user_distri.items():
         for user in node_users:
             for mserv_num in user.mserv_dependency:
                 mserv_sets[node_num].add(mserv_num)
-    node_sets = [set() for _ in range(microservice_count)]  # 统计各微服务的边缘节点分布情况
+    node_sets = [set() for _ in range(microservice_count)]  # 统计各微服务的边缘节点分布情况，第一维是微服务种类序号，第二维是边缘节点序号（set集合）
     for node_num, mserv_set in enumerate(mserv_sets):
         for mserv_num in mserv_set:
             node_sets[mserv_num].add(node_num)
+    Dmi = [0] * microservice_count  # 每种微服务的平均节点间距离
+    for mserv_num in range(microservice_count):
+        node_pairs = itertools.combinations(node_sets[mserv_num], 2)
+        link_num = 0
+        for pair in node_pairs:
+            Dmi[mserv_num] += 1 / channel[pair]  # TODO: 直接改成距离
+            link_num += 1
+        if link_num != 0:
+            Dmi[mserv_num] /= link_num
+        else:
+            Dmi[mserv_num] = 0
+    g_factor = [len(node_sets[mserv_num]) / edgenode_count * Dmi[mserv_num] for mserv_num in range(microservice_count)]
+
+    # Step2: 计算local factor
+    # 模糊比较矩阵，根据模糊准则确定模糊值
+    criteria_matrix = [
+        [fahp.FN(1, 1, 1), fahp.FN(1, 2, 3), fahp.FN(2, 3, 4), fahp.FN(3, 4, 5)],
+        [fahp.FN(1 / 3, 1 / 2, 1), fahp.FN(1, 1, 1), fahp.FN(1, 2, 3), fahp.FN(2, 3, 4)],
+        [fahp.FN(1 / 4, 1 / 3, 1 / 2), fahp.FN(1 / 3, 1 / 2, 1), fahp.FN(1, 1, 1), fahp.FN(1, 2, 3)],
+        [fahp.FN(1 / 5, 1 / 4, 1 / 3), fahp.FN(1 / 4, 1 / 3, 1 / 2), fahp.FN(1 / 3, 1 / 2, 1), fahp.FN(1, 1, 1)]
+    ]  # TODO: 模糊值待定
+    weights = fahp.fuzzyAHP(criteria_matrix)
+
+    mserv_properties = [[] for _ in range(microservice_count)]  # 第一维是微服务种类序号，第二维是节点序号和“微服务属性元组”组成的嵌套元组
+    for mserv_num, node_set in enumerate(node_sets):
+        for node_num in node_set:
+            req_user_num = 0
+            cost_price = mservs[mserv_num].place_cost
+            order = 0  # order的计量方式：比如有一个first的请求给权值为3，last给2，中间给1，然后对权值累加和求平均
+            req_storage = mservs[mserv_num].memory_demand
+            for user in user_distri[node_num]:
+                if mserv_num in user.mserv_dependency:
+                    req_user_num += 1
+                    if mserv_num == user.mserv_dependency[0]:
+                        order += 3
+                    elif mserv_num == user.mserv_dependency[-1]:
+                        order += 2
+                    else:
+                        order += 1
+            order /= req_user_num
+            mserv_properties[mserv_num].append((node_num, (req_user_num, cost_price * 0.07, order, req_storage)))
+    l_factor = [[] for _ in range(microservice_count)]  # 第一维是微服务种类序号，第二维是节点序号和factor值
+    for mserv_num, properties in enumerate(mserv_properties):
+        for node_num, property in properties:
+            factor = (  # TODO: 属性数据间的数量级还要调整
+                    weights[0] * property[0]
+                    + weights[1] * 1 / property[1]
+                    + weights[2] * property[2]
+                    + weights[3] * 1 / property[3]
+            )
+            l_factor[mserv_num].append((node_num, factor))
+
+    # Step3: combine the global and local factor
+    alpha = 0.5
+    theta_demand_factor = [
+        g_factor[mserv_num] * alpha +
+        sum(map(lambda x: x[1], l_factor[mserv_num])) * (1 - alpha)
+        for mserv_num in range(microservice_count)
+    ]
+
+    # P就是max(theta_mi)
+    # 0<epsilon<1任意给
+    # n是theta的个数
+    # 先拿微服务部署最大总成本来，把每个微服务都放置一个，剩下的总成本限制再拿来做背包
+
+
+
+
+
+
+
+
+    """
+    model_m.addConstr(quicksum(x[0, k] for k in range(edgenode_count)) <= 3)
+    model_m.addConstr(quicksum(x[1, k] for k in range(edgenode_count)) <= 2)
+    model_m.addConstr(quicksum(x[2, k] for k in range(edgenode_count)) <= 3)
+    model_m.addConstr(quicksum(x[3, k] for k in range(edgenode_count)) <= 3)
+    model_m.addConstr(quicksum(x[4, k] for k in range(edgenode_count)) <= 2)
+    model_m.addConstr(quicksum(x[5, k] for k in range(edgenode_count)) <= 2)
+    model_m.addConstr(quicksum(x[6, k] for k in range(edgenode_count)) <= 3)
     """
 
     # 添加子问题约束
@@ -122,6 +204,7 @@ def benders_solve(edge_nodes: list, mservs: list, users: list, channel: dict) ->
     L = 0
     loop_count = 0
     start_time = time.time()
+    current_best_main_obj = math.inf
     need_rm_constrs = []  # 存储该轮中更新的子问题约束的引用，即可在进入下一轮之前删除该轮添加的约束
     while not (time.time() - start_time > 20):
         loop_count += 1
@@ -132,6 +215,17 @@ def benders_solve(edge_nodes: list, mservs: list, users: list, channel: dict) ->
         for i in range(microservice_count):
             for k in range(edgenode_count):
                 x_result[(i, k)] = 1 if x[(i, k)].X > 0.9 else 0
+
+        # 只有当次主问题的cost+q比之前的所有cost+q都小，才给optimal cut
+        if model_m.objVal > current_best_main_obj:
+            # feasible cut
+            model_m.addConstr(quicksum(
+                1 - x[(i, k)] if x_result[(i, k)] == 1 else x[(i, k)] for i in range(microservice_count)
+                for k in range(edgenode_count)
+            ) >= 1)
+            continue
+        current_best_main_obj = model_m.objVal
+
         # 更新子问题约束
         for constr in need_rm_constrs:
             model_s.remove(constr)  # 删除上一轮中添加的约束
@@ -241,4 +335,4 @@ def benders_solve(edge_nodes: list, mservs: list, users: list, channel: dict) ->
             ))
 
             obj_val = model_m.objVal - q.X + phi
-            print('\n' * 3 + '*' * 10 + str(obj_val) + '*' * 10 + '\n' * 3)
+            print('\n' * 3 + '*' * 10 + '!' * 3 + str(obj_val) + '*' * 10 + '\n' * 3)
