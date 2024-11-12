@@ -19,3 +19,46 @@ def print_objective(edge_nodes: list, users: list) -> None:
     print(f"总完成时间：{total_makespan}")
     print(f"总目标函数值：{total_objective}")
     print('-' * 30)
+
+
+def print_grb_solve_status(status: int) -> None:
+    """
+    打印Gurobi求解状态
+    https://www.gurobi.com/documentation/current/refman/optimization_status_codes.html#sec:StatusCodes
+    """
+    if status == 1:
+        print("LOADED")
+    elif status == 2:
+        print("OPTIMAL")
+    elif status == 3:
+        print("INFEASIBLE")
+    elif status == 4:
+        print("INF_OR_UNBD")
+    elif status == 5:
+        print("UNBOUNDED")
+    elif status == 6:
+        print("CUTOFF")
+    elif status == 7:
+        print("ITERATION_LIMIT")
+    elif status == 8:
+        print("NODE_LIMIT")
+    elif status == 9:
+        print("TIME_LIMIT")
+    elif status == 10:
+        print("SOLUTION_LIMIT")
+    elif status == 11:
+        print("INTERRUPTED")
+    elif status == 12:
+        print("NUMERIC")
+    elif status == 13:
+        print("SUBOPTIMAL")
+    elif status == 14:
+        print("INPROGRESS")
+    elif status == 15:
+        print("USER_OBJ_LIMIT")
+    elif status == 16:
+        print("WORK_LIMIT")
+    elif status == 17:
+        print("MEM_LIMIT")
+    else:
+        print("未知状态")

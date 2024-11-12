@@ -2,6 +2,17 @@ import math
 
 
 def fptas_knapsack(weights, profits, capacity, epsilon):
+    """
+    FPTAS 算法求解背包问题
+    :param weights: 物品重量列表
+    :param profits: 物品利润列表
+    :param capacity: 背包容量
+    :param epsilon: 容差值 范围0~1
+    :return: 最大利润和放置方案
+    """
+    if epsilon <= 0 or epsilon >= 1:
+        raise ValueError("Invalid epsilon value")
+
     n = len(profits)  # 物品数量
     max_profit = max(profits)  # 所有物品利润中的最大值
 

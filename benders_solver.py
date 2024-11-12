@@ -3,8 +3,11 @@ import math
 import random
 import time
 from gurobipy import *
+
+from utils import print_grb_solve_status
 from values import CONSTANTS
 import FuzzyAHP as fahp
+from knapsack import fptas_knapsack
 
 
 def benders_solve(edge_nodes: list, mservs: list, users: list, channel: dict) -> None:
@@ -52,6 +55,7 @@ def benders_solve(edge_nodes: list, mservs: list, users: list, channel: dict) ->
             quicksum(x[(i, k)] * mservs[i].memory_demand for i in range(microservice_count)) <= edge_nodes[k].memory
         )
 
+    """
     # !!!新：只要有用户请求了的微服务，必须至少放置一个
     mserv_frequency = [0] * len(mservs)
     # 统计微服务频数
@@ -61,9 +65,20 @@ def benders_solve(edge_nodes: list, mservs: list, users: list, channel: dict) ->
     for mserv_num, mserv_freq in enumerate(mserv_frequency):
         if mserv_freq > 1:
             model_m.addConstr(quicksum(x[(mserv_num, k)] for k in range(edgenode_count)) == random.choice((1, 2)))
+            # model_m.addConstr(quicksum(x[(mserv_num, k)] for k in range(edgenode_count)) <= 5)
         elif mserv_freq == 1:
             model_m.addConstr(quicksum(x[(mserv_num, k)] for k in range(edgenode_count)) == 1)
-
+    """
+    """
+    model_m.addConstr(quicksum(x[(0, k)] for k in range(edgenode_count)) == 1)
+    model_m.addConstr(quicksum(x[(1, k)] for k in range(edgenode_count)) == 1)
+    model_m.addConstr(quicksum(x[(2, k)] for k in range(edgenode_count)) == 2)
+    model_m.addConstr(quicksum(x[(3, k)] for k in range(edgenode_count)) == 1)
+    model_m.addConstr(quicksum(x[(4, k)] for k in range(edgenode_count)) == 2)
+    model_m.addConstr(quicksum(x[(5, k)] for k in range(edgenode_count)) == 2)
+    model_m.addConstr(quicksum(x[(6, k)] for k in range(edgenode_count)) == 1)
+    model_m.addConstr(quicksum(x[(7, k)] for k in range(edgenode_count)) == 1)
+    """
     # !!!新：heuristic initial cut
     # Step1: 计算global factor
     user_distri = {}  # 统计边缘节点下属用户情况
@@ -139,17 +154,17 @@ def benders_solve(edge_nodes: list, mservs: list, users: list, channel: dict) ->
         for mserv_num in range(microservice_count)
     ]
 
-    # P就是max(theta_mi)
-    # 0<epsilon<1任意给
-    # n是theta的个数
     # 先拿微服务部署最大总成本来，把每个微服务都放置一个，剩下的总成本限制再拿来做背包
+    remain_cost = math.floor(CONSTANTS.MAX_DEPLOY_COST - sum(map(lambda x: x.place_cost, mservs)))
+    place_costs = [math.floor(mserv.place_cost) for mserv in mservs]
+    _, place_method = fptas_knapsack(place_costs, theta_demand_factor, remain_cost, 0.5)
 
-
-
-
-
-
-
+    for i in range(microservice_count):
+        if place_method.get(i) is None:
+            place_method[i] = 0
+        place_method[i] += 1
+        model_m.addConstr(quicksum(x[i, k] for k in range(edgenode_count)) <= place_method[i])  # upper bound
+        model_m.addConstr(quicksum(x[i, k] for k in range(edgenode_count)) >= 1)  # lower bound
 
     """
     model_m.addConstr(quicksum(x[0, k] for k in range(edgenode_count)) <= 3)
@@ -159,6 +174,7 @@ def benders_solve(edge_nodes: list, mservs: list, users: list, channel: dict) ->
     model_m.addConstr(quicksum(x[4, k] for k in range(edgenode_count)) <= 2)
     model_m.addConstr(quicksum(x[5, k] for k in range(edgenode_count)) <= 2)
     model_m.addConstr(quicksum(x[6, k] for k in range(edgenode_count)) <= 3)
+    model_m.addConstr(quicksum(x[7, k] for k in range(edgenode_count)) <= 3)
     """
 
     # 添加子问题约束
@@ -200,24 +216,37 @@ def benders_solve(edge_nodes: list, mservs: list, users: list, channel: dict) ->
     model_s.setObjective(quicksum(makespan[h] for h in range(task_count)))
     model_s.modelSense = GRB.MINIMIZE
 
+    model_m.Params.OutputFlag = 0  # 1表示开启输出（默认值），0为关闭
+    model_s.Params.OutputFlag = 0
     # 循环求解
     L = 0
     loop_count = 0
     start_time = time.time()
     current_best_main_obj = math.inf
+    current_best_total_obj = math.inf
     need_rm_constrs = []  # 存储该轮中更新的子问题约束的引用，即可在进入下一轮之前删除该轮添加的约束
-    while not (time.time() - start_time > 20):
+    while not (time.time() - start_time > math.inf):
         loop_count += 1
+        print('\n' * 3 + '*' * 10 + '!' * 3 + str(current_best_total_obj) + '*' * 10 + '\n' * 3)
+
         print('\n' * 3 + '*' * 10 + f"第{loop_count}轮循环" + '*' * 10)
         print('\n' + '*' * 10 + "主问题求解" + '*' * 10)
         model_m.optimize()
+        print(f"主问题：", end='')
+        print_grb_solve_status(model_m.Status)
+        if model_m.Status == 2:
+            print("主问题目标函数值：", model_m.objVal)
+
         x_result = {}  # 保存主问题的一个解，传递给子问题
+        mserv_numbers = [0] * microservice_count  # 统计每种微服务放置的数量
         for i in range(microservice_count):
             for k in range(edgenode_count):
                 x_result[(i, k)] = 1 if x[(i, k)].X > 0.9 else 0
-
+                mserv_numbers[i] += x_result[(i, k)]
+        print(f"微服务放置数量：{mserv_numbers}")
+        """
         # 只有当次主问题的cost+q比之前的所有cost+q都小，才给optimal cut
-        if model_m.objVal > current_best_main_obj:
+        if model_m.objVal >= current_best_main_obj:
             # feasible cut
             model_m.addConstr(quicksum(
                 1 - x[(i, k)] if x_result[(i, k)] == 1 else x[(i, k)] for i in range(microservice_count)
@@ -225,7 +254,7 @@ def benders_solve(edge_nodes: list, mservs: list, users: list, channel: dict) ->
             ) >= 1)
             continue
         current_best_main_obj = model_m.objVal
-
+        """
         # 更新子问题约束
         for constr in need_rm_constrs:
             model_s.remove(constr)  # 删除上一轮中添加的约束
@@ -246,14 +275,23 @@ def benders_solve(edge_nodes: list, mservs: list, users: list, channel: dict) ->
         """
         print('\n' * 3 + '*' * 10 + "判断子问题松弛前是否有解" + '*' * 10)
         # 判断子问题松弛前是否有解
-        model_s.Params.TimeLimit = 10  # 设置时间限制（单位：s）
+        # model_s.Params.TimeLimit = 10  # 设置时间限制（单位：s）
         model_s.optimize()
+        print(f"子问题：", end='')
+        print_grb_solve_status(model_s.Status)
+        if model_s.Status == 2:
+            print("子问题目标函数值：", model_s.objVal)
         if model_s.SolCount == 0:
             # 如果子问题松弛前无解，则添加feasible cut
+            """
             model_m.addConstr(quicksum(
                 1 - x[(i, k)] if x_result[(i, k)] == 1 else x[(i, k)] for i in range(microservice_count)
                 for k in range(edgenode_count)
             ) >= 1)
+            """
+            total_x = sum(x_result.values())
+            model_m.addConstr(quicksum(
+                x[(i, k)] for i in range(microservice_count) for k in range(edgenode_count)) >= total_x + 1)
             continue
         model_s.Params.TimeLimit = math.inf  # 取消时间限制
         """
@@ -269,6 +307,10 @@ def benders_solve(edge_nodes: list, mservs: list, users: list, channel: dict) ->
         model_s_relaxed = model_s.relax()  # 松弛子问题
         print('\n' * 3 + '*' * 10 + "子问题求解" + '*' * 10)
         model_s_relaxed.optimize()
+        print(f"子问题松弛后：", end='')
+        print_grb_solve_status(model_s_relaxed.Status)
+        if model_s_relaxed.Status == 2:
+            print("子问题松弛后目标函数值：", model_s_relaxed.objVal)
 
         """
         # 测试是否被松弛
@@ -321,10 +363,15 @@ def benders_solve(edge_nodes: list, mservs: list, users: list, channel: dict) ->
             )
             if makespan_opt[h] > Th_max:
                 # 如果不满足deadline约束，则添加feasible cut
+                """
                 model_m.addConstr(quicksum(
                     1 - x[(i, k)] if x_result[(i, k)] == 1 else x[(i, k)] for i in range(microservice_count)
                     for k in range(edgenode_count)
                 ) >= 1)
+                """
+                total_x = sum(x_result.values())
+                model_m.addConstr(quicksum(
+                    x[(i, k)] for i in range(microservice_count) for k in range(edgenode_count)) >= total_x + 1)
                 break
         else:
             # 添加optimal cut
@@ -336,3 +383,5 @@ def benders_solve(edge_nodes: list, mservs: list, users: list, channel: dict) ->
 
             obj_val = model_m.objVal - q.X + phi
             print('\n' * 3 + '*' * 10 + '!' * 3 + str(obj_val) + '*' * 10 + '\n' * 3)
+            if obj_val < current_best_total_obj:
+                current_best_total_obj = obj_val
