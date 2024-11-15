@@ -163,6 +163,7 @@ def benders_solve(edge_nodes: list, mservs: list, users: list, channel: dict) ->
         if place_method.get(i) is None:
             place_method[i] = 0
         place_method[i] += 1
+        # TODO: 需要修改策略，让1少点
         model_m.addConstr(quicksum(x[i, k] for k in range(edgenode_count)) <= place_method[i])  # upper bound
         model_m.addConstr(quicksum(x[i, k] for k in range(edgenode_count)) >= 1)  # lower bound
 
@@ -208,7 +209,7 @@ def benders_solve(edge_nodes: list, mservs: list, users: list, channel: dict) ->
                 mservs[f[-1]].send_datasize / channel[(k, user.serv_node)] if k != user.serv_node else 0)
             for k in range(edgenode_count)
         )
-        model_s.addConstr(makespan[h] <= Th_max)
+        # model_s.addConstr(makespan[h] <= Th_max)
 
     # 目标函数
     model_m.setObjective(Cost + q)
@@ -240,6 +241,62 @@ def benders_solve(edge_nodes: list, mservs: list, users: list, channel: dict) ->
         model_m.optimize()
         print(f"主问题：", end='')
         print_grb_solve_status(model_m.Status)
+
+        def feasible_cut():
+            """
+            添加feasible cut
+            :global add_which = 0: 指示目前想要添加哪个微服务的数量
+            :global step_flag = False: 指示当次循环是否是进入下一个总放置数量level前的获取基准线的步骤（见下文代码）
+            :mserv_place_count = [1] * microservice_count: 记录该level下，每种微服务放置的数量
+            :need_rm_constrs2 = []: 记录上一轮中需要删除的约束
+            """
+            """
+            model_m.addConstr(quicksum(
+                1 - x[(i, k)] if x_result[(i, k)] == 1 else x[(i, k)] for i in range(microservice_count)
+                for k in range(edgenode_count)
+            ) >= 1)
+            """
+            nonlocal add_which
+            nonlocal step_flag
+            nonlocal mserv_place_count
+
+            for constr in need_rm_constrs2:
+                model_m.remove(constr)  # 删除上一轮中添加的约束
+            need_rm_constrs2.clear()
+
+            # 进入下一个level
+            if step_flag:
+                # 更新放置基准线
+                mserv_place_count = [0] * microservice_count
+                for i in range(microservice_count):
+                    for k in range(edgenode_count):
+                        mserv_place_count[i] += x_result[(i, k)]
+                # 开始尝试下一个level
+                step_flag = False
+
+            if add_which < microservice_count:
+                # 尝试各类微服务多放1个
+                for i in range(microservice_count):
+                    # 添加微服务放置数量约束
+                    if i == add_which:
+                        place_count = mserv_place_count[i] + 1
+                    else:
+                        place_count = mserv_place_count[i]
+                    constr = model_m.addConstr(quicksum(x[i, k] for k in range(edgenode_count)) == place_count)
+                    need_rm_constrs2.append(constr)
+                add_which += 1
+            else:
+                # TODO: 参考theta的值来选最终落点，但也不能一直往同一个一直加
+                # 如果都多放过，子问题还是无解，则增加放置总数，进入下一个level
+                add_which /= microservice_count
+                # 进入下一个level前，需要先获取该level的基准线（未多放1个时，gurobi给的放置情况）
+                total_x = sum(x_result.values())  # 统计当前放置总数
+                # 这个值是当前level基准线的放置数量+1，而下一个level基准线的放置数量就是+1后的这个值
+                constr = model_m.addConstr(quicksum(
+                    x[(i, k)] for i in range(microservice_count) for k in range(edgenode_count)) == total_x)
+                need_rm_constrs2.append(constr)
+                step_flag = True
+
         if model_m.Status == 2:
             print("主问题目标函数值：", model_m.objVal)
 
@@ -292,60 +349,6 @@ def benders_solve(edge_nodes: list, mservs: list, users: list, channel: dict) ->
             print("子问题目标函数值：", model_s.objVal)
         if model_s.SolCount == 0:
             # 如果子问题松弛前无解，则添加feasible cut
-            def feasible_cut():
-                """
-                添加feasible cut
-                :global add_which = 0: 指示目前想要添加哪个微服务的数量
-                :global step_flag = False: 指示当次循环是否是进入下一个总放置数量level前的获取基准线的步骤（见下文代码）
-                :mserv_place_count = [1] * microservice_count: 记录该level下，每种微服务放置的数量
-                :need_rm_constrs2 = []: 记录上一轮中需要删除的约束
-                """
-                """
-                model_m.addConstr(quicksum(
-                    1 - x[(i, k)] if x_result[(i, k)] == 1 else x[(i, k)] for i in range(microservice_count)
-                    for k in range(edgenode_count)
-                ) >= 1)
-                """
-                nonlocal add_which
-                nonlocal step_flag
-                nonlocal mserv_place_count
-
-                for constr in need_rm_constrs2:
-                    model_m.remove(constr)  # 删除上一轮中添加的约束
-                need_rm_constrs2.clear()
-
-                # 进入下一个level
-                if step_flag:
-                    # 更新放置基准线
-                    mserv_place_count = [0] * microservice_count
-                    for i in range(microservice_count):
-                        for k in range(edgenode_count):
-                            mserv_place_count[i] += x_result[(i, k)]
-                    # 开始尝试下一个level
-                    step_flag = False
-
-                if add_which < microservice_count:
-                    # 尝试各类微服务多放1个
-                    for i in range(microservice_count):
-                        # 添加微服务放置数量约束
-                        if i == add_which:
-                            place_count = mserv_place_count[i] + 1
-                        else:
-                            place_count = mserv_place_count[i]
-                        constr = model_m.addConstr(quicksum(x[i, k] for k in range(edgenode_count)) == place_count)
-                        need_rm_constrs2.append(constr)
-                    add_which += 1
-                else:
-                    # 如果都多放过，子问题还是无解，则增加放置总数，进入下一个level
-                    add_which /= microservice_count
-                    # 进入下一个level前，需要先获取该level的基准线（未多放1个时，gurobi给的放置情况）
-                    total_x = sum(x_result.values())  # 统计当前放置总数
-                    # 这个值是当前level基准线的放置数量+1，而下一个level基准线的放置数量就是+1后的这个值
-                    constr = model_m.addConstr(quicksum(
-                        x[(i, k)] for i in range(microservice_count) for k in range(edgenode_count)) == total_x)
-                    need_rm_constrs2.append(constr)
-                    step_flag = True
-
             feasible_cut()
             continue
         model_s.Params.TimeLimit = math.inf  # 取消时间限制
@@ -381,19 +384,24 @@ def benders_solve(edge_nodes: list, mservs: list, users: list, channel: dict) ->
         y_result = {}
         for h in range(task_count):
             for i in range(microservice_count):
-                max_y = -1
+                max_y = 0.00001
                 max_y_nok = -1
                 for k in range(edgenode_count):
                     # 记录所有k中最大的y
                     if y[(i, k, h)].X > max_y:
                         max_y = y[(i, k, h)].X
                         max_y_nok = k
-                for k in range(edgenode_count):
-                    # 将最大的y设为1，其余设为0
-                    if k == max_y_nok:
-                        y_result[(i, k, h)] = 1
-                    else:
+                if max_y_nok == -1:
+                    # 说明用户h未请求微服务i，则将所有k设为0
+                    for k in range(edgenode_count):
                         y_result[(i, k, h)] = 0
+                else:
+                    for k in range(edgenode_count):
+                        # 将最大的y设为1，其余设为0
+                        if k == max_y_nok:
+                            y_result[(i, k, h)] = 1
+                        else:
+                            y_result[(i, k, h)] = 0
         makespan_opt = [0] * task_count
         for user in users:
             h = user.num
