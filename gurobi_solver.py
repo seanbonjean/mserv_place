@@ -113,3 +113,6 @@ def gurobi_solve(edge_nodes: list, mservs: list, users: list, channel: dict) -> 
         print(x_result)
         print("y(i, k, h): ")
         print(y_result)
+
+        total_makespan = sum(map(lambda x: x.getValue(), makespan))
+        print(f"{model.objVal} = {Cost.getValue()} + {total_makespan}")

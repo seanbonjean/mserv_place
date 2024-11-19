@@ -3,6 +3,7 @@ from values import load_data
 from strategy import *
 from gurobi_solver import gurobi_solve
 from benders_solver import benders_solve
+from greedy_combine import greedy_combine
 
 
 def random_algo(data_path: str) -> None:
@@ -30,3 +31,8 @@ def gurobi_algo(data_path: str) -> None:
 def benders_algo(data_path: str) -> None:
     edgenode_list, microservice_list, user_list, channelrate_dict = load_data(data_path)
     benders_solve(edgenode_list, microservice_list, user_list, channelrate_dict)
+
+
+def combine_algo(data_path: str) -> None:
+    edgenode_list, microservice_list, user_list, channelrate_dict = load_data(data_path)
+    greedy_combine(edgenode_list, microservice_list, user_list, channelrate_dict)

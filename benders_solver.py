@@ -230,7 +230,11 @@ def benders_solve(edge_nodes: list, mservs: list, users: list, channel: dict) ->
     loop_count = 0
     start_time = time.time()
     current_best_main_obj = math.inf
+    # 当前所有轮循环中最好的一轮的结果信息
     current_best_total_obj = math.inf
+    current_best_total_cost = math.inf
+    current_best_total_makespan = math.inf
+    current_best_mserv_numbers = []
     need_rm_constrs = []  # 存储该轮中更新的子问题约束的引用，即可在进入下一轮之前删除该轮添加的约束
     """
     # feasible cut专用赋初值区
@@ -356,8 +360,6 @@ def benders_solve(edge_nodes: list, mservs: list, users: list, channel: dict) ->
 
     while not (time.time() - start_time > math.inf):
         loop_count += 1
-        print('\n' * 3 + '*' * 10 + '!' * 3 + str(current_best_total_obj) + '*' * 10 + '\n' * 3)
-
         print('\n' * 3 + '*' * 10 + f"第{loop_count}轮循环" + '*' * 10)
         print('\n' + '*' * 10 + "主问题求解" + '*' * 10)
         model_m.optimize()
@@ -508,6 +510,15 @@ def benders_solve(edge_nodes: list, mservs: list, users: list, channel: dict) ->
             ))
 
             obj_val = model_m.objVal - q.X + phi
-            print('\n' * 3 + '*' * 10 + '!' * 3 + str(obj_val) + '*' * 10 + '\n' * 3)
+            print('\n' * 3 + '*' * 10 + '!' * 3 +
+                  f"当前解：{obj_val} = {model_m.objVal - q.X} + {phi}" +
+                  '*' * 10 + '\n' * 3)
+            print('\n' * 3 + '*' * 10 + '!' * 3 +
+                  f"目前为止最优解：{current_best_total_obj} = {current_best_total_cost} + {current_best_total_makespan}" +
+                  '*' * 10 + '\n' * 3)
+            print(f"最优解的微服务放置个数：{current_best_mserv_numbers}")
             if obj_val < current_best_total_obj:
                 current_best_total_obj = obj_val
+                current_best_total_cost = model_m.objVal - q.X
+                current_best_total_makespan = phi
+                current_best_mserv_numbers = mserv_numbers
