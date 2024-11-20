@@ -49,7 +49,7 @@ def gurobi_solve(edge_nodes: list, mservs: list, users: list, channel: dict) -> 
     """
 
     # Th < Th_max
-    makespan = [0] * task_count
+    makespan = [LinExpr()] * task_count
     for user in users:
         h = user.num
         f = user.mserv_dependency
