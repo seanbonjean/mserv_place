@@ -1,4 +1,5 @@
 import random
+from stdout_redirect import RedirectStdoutToFileAndConsole
 from values import load_data
 from strategy import *
 from gurobi_solver import gurobi_solve
@@ -24,8 +25,11 @@ def baseline_algo(data_path: str) -> None:
 
 
 def gurobi_algo(data_path: str) -> None:
+    redirector = RedirectStdoutToFileAndConsole("output/gurobi.txt")
+    redirector.start()
     edgenode_list, microservice_list, user_list, channelrate_dict = load_data(data_path)
     gurobi_solve(edgenode_list, microservice_list, user_list, channelrate_dict)
+    redirector.stop()
 
 
 def benders_algo(data_path: str) -> None:
@@ -34,5 +38,8 @@ def benders_algo(data_path: str) -> None:
 
 
 def combine_algo(data_path: str) -> None:
+    redirector = RedirectStdoutToFileAndConsole("output/combine.txt")
+    redirector.start()
     edgenode_list, microservice_list, user_list, channelrate_dict = load_data(data_path)
     greedy_combine(edgenode_list, microservice_list, user_list, channelrate_dict)
+    redirector.stop()
