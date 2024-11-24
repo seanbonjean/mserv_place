@@ -10,13 +10,16 @@ import FuzzyAHP as fahp
 from values import CONSTANTS
 
 
-def parallel_task(mserv_num: int, pre_place_mservs: list, obj_before: float, data: tuple) -> tuple:
+def parallel_task(mserv_num: int, pre_place_mservs: list, fixed_place_mservs: list,
+                  obj_before: float, data: tuple) -> tuple:
     """对需要并行执行的代码进行封装"""
     mserv_max_delta = (-math.inf, -1, -1)  # 针对该微服务的最大delta记录器
     pre_place_node_set = pre_place_mservs[mserv_num]  # 拟放置该微服务的边缘节点集合
     if len(pre_place_node_set) <= 1:
         return -math.inf, -1, -1
     for node_num in pre_place_node_set:  # 逐个尝试，去掉一个节点
+        if node_num in fixed_place_mservs[mserv_num]:  # 如果该节点已经固定放置，则跳过
+            continue
         obj_after, _, _ = calc_objFunc(pre_place_mservs[:mserv_num] +
                                        [pre_place_node_set - {node_num}] +
                                        pre_place_mservs[mserv_num + 1:], data)
@@ -240,6 +243,7 @@ def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict) -
     # 贪婪合并，寻找梯度(delta)最大的合并方案
     max_delta = (math.inf, -1, -1)  # 初始化最大delta记录器
     # max_delta元组形式：(delta值, 微服务对应的mserv_num, 合并去掉的节点node_num)
+    fixed_place_mservs = [set() for _ in range(microservice_count)]  # 固定放置不动的微服务列表
     loop_count = 0
     start_time = time.time()
     time_elapsed = 0.0
@@ -253,8 +257,9 @@ def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict) -
         if obj_before == math.inf:
             raise Exception("合并前即无解")
 
-        parallel_task_fixed = partial(parallel_task, pre_place_mservs=pre_place_mservs, obj_before=obj_before,
-                                      data=data)  # 固定相同的参数
+        parallel_task_fixed = partial(parallel_task, pre_place_mservs=pre_place_mservs,
+                                      fixed_place_mservs=fixed_place_mservs,
+                                      obj_before=obj_before, data=data)  # 固定相同的参数
         mserv_max_deltas = Parallel(n_jobs=-1)(
             delayed(parallel_task_fixed)(i) for i in range(microservice_count))  # 计算各并行任务中，各微服务的最大delta
         max_delta = max(mserv_max_deltas, key=lambda x: x[0])
@@ -297,6 +302,8 @@ def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict) -
             print(f"第{max_delta[1]}个微服务在节点{max_delta[2]}上被合并去掉")
             print("合并后的放置情况集合：")
             print(pre_place_mservs)
+            print("当前微服务固定情况：")
+            print(fixed_place_mservs)
         # 判断主问题、子问题是否满足约束
         obj, cost, makespans = calc_objFunc(pre_place_mservs, data)
         print("目标函数值(C+T)：", obj)
@@ -333,6 +340,9 @@ def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict) -
             print("其中如下用户的makespan超出限制：")
             for user_num, makespan in violate_list:
                 print(f"用户{user_num}的makespan为{makespan}")
+            print(f"将第{max_delta[1]}个微服务在节点{max_delta[2]}上进行固定")
+            fixed_place_mservs[max_delta[1]].add(max_delta[2])  # 记录固定微服务
+            pre_place_mservs[max_delta[1]].add(max_delta[2])  # 固定的微服务加回拟放置集合
         else:
             print("子问题feasible，总makespan=", sum(makespans))
 
