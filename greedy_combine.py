@@ -108,6 +108,26 @@ def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict) -
     microservice_count = len(mservs)
     task_count = len(users)
 
+    def calc_globalFactor() -> list:
+        """
+        计算global factor
+        """
+        node_sets = [set(mserv_req_nums[mserv_num].keys()) for mserv_num in range(microservice_count)]
+        Dmi = [0] * microservice_count  # 每种微服务的平均节点间距离
+        for mserv_num in range(microservice_count):
+            node_pairs = itertools.combinations(node_sets[mserv_num], 2)
+            link_num = 0
+            for pair in node_pairs:
+                Dmi[mserv_num] += 1 / channel[pair]  # TODO: 直接改成距离
+                link_num += 1
+            if link_num != 0:
+                Dmi[mserv_num] /= link_num
+            else:
+                Dmi[mserv_num] = 0
+        g_factor = [len(node_sets[mserv_num]) / edgenode_count * Dmi[mserv_num] for mserv_num in
+                    range(microservice_count)]
+        return g_factor
+
     def calc_localFactor() -> list:
         """
         利用模糊AHP，计算local factor
@@ -218,7 +238,7 @@ def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict) -
             mserv_req_nums[mserv_num][node_num] = req_count
 
     # 针对每种微服务，如果请求它的节点数量比upper bound中计算的“能放的最多数量”要少，则这些节点上全部拟放置该微服务；
-    # 否则，按照请求用户个数由大到小排序，依次拟放置该微服务（注意：拟放置是指合并前的预先放置，不是真正放置下去，它没有考虑总cost限制）
+    # 否则，按照请求用户个数由大到小排序，依次拟放置该微服务（注意：拟放置是指合并前的预先放置，不是真正放置下去，它没有考虑总cost限制和内存限制）
     pre_place_mservs = [set() for _ in range(microservice_count)]  # 拟放置微服务情况记录，第一维是微服务种类序号，第二维是边缘节点序号的集合
     for mserv_num in range(microservice_count):
         node_req_count = mserv_req_nums[mserv_num]  # 这个微服务有哪些节点上请求到（键），有几个用户请求（值）
@@ -235,10 +255,30 @@ def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict) -
             for node_num in node_req_count:  # 如果该微服务请求的节点数小于其上界，则这些节点上都拟放置该微服务
                 pre_place_mservs[mserv_num].add(node_num)
 
+    """
+    # 初始放置最优解测试
+    temp = [(0, 1), (0, 5), (1, 4), (1, 7), (2, 2), (2, 6), (3, 0), (3, 1), (3, 8), (4, 3), (4, 7), (5, 4), (5, 8), (6, 2), (6, 8), (7, 3), (7, 7), (8, 4), (8, 8), (9, 1), (9, 8), (10, 4), (10, 7), (11, 2), (11, 3), (11, 8), (12, 5), (12, 9), (13, 2), (13, 9), (14, 2), (14, 8)]
+    pre_place_mservs = [set() for _ in range(microservice_count)]
+    for mserv_num, node_num in temp:
+        pre_place_mservs[mserv_num].add(node_num)
+    """
+
     print("微服务请求情况")
     print("微服务序号 | 请求总个数 | 请求在各节点上的分布")
     for mserv_num, req_nums in enumerate(mserv_req_nums):
         print(mserv_num, sum(req_nums.values()), req_nums)
+    print()
+    print("拟放置微服务情况")
+    print("微服务序号 | 拟放置节点")
+    for mserv_num, placed_nodes in enumerate(pre_place_mservs):
+        print(mserv_num, placed_nodes)
+
+    print()
+    g_factor = calc_globalFactor()
+    print("global factor")
+    print("微服务序号 | global factor")
+    for mserv_num, gf in enumerate(g_factor):
+        print(f"{mserv_num}: {gf}")
 
     # 贪婪合并，寻找梯度(delta)最大的合并方案
     max_delta = (math.inf, -1, -1)  # 初始化最大delta记录器
