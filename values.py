@@ -41,7 +41,13 @@ def load_data(datapath: str) -> tuple:
         for j in range(sheet.ncols):
             channelrate_dict[(i, j)] = sheet.cell(i, j).value
 
-    return edgenode_list, microservice_list, user_list, channelrate_dict
+    sheet = data.sheet_by_name("channel_connect")
+    channel_connectivity = {}
+    for i in range(sheet.nrows):
+        for j in range(sheet.ncols):
+            channel_connectivity[(i, j)] = sheet.cell(i, j).value
+
+    return edgenode_list, microservice_list, user_list, channelrate_dict, channel_connectivity
 
 
 if __name__ == '__main__':

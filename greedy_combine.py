@@ -102,7 +102,7 @@ def calc_objFunc(place_strategy: list, data: tuple) -> tuple:
     return math.inf, 0, [0] * task_count
 
 
-def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict) -> None:
+def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict, connect: dict) -> None:
     data = edge_nodes, mservs, users, channel
     edgenode_count = len(edge_nodes)
     microservice_count = len(mservs)

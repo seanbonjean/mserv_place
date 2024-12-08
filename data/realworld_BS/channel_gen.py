@@ -72,8 +72,10 @@ def channel_gen(distance_threshold: float, read_path: str, write_path: str) -> N
     sheet = write_book.add_sheet("connect")
     for i in range(len(BS_list)):
         for j in range(len(BS_list)):
-            if (i, j) in connectivity:
+            if (i, j) in connectivity or (j, i) in connectivity:
                 sheet.write(i, j, 1)
+            elif i == j:
+                sheet.write(i, j, -1)
             else:
                 sheet.write(i, j, 0)
     write_book.save(write_path)

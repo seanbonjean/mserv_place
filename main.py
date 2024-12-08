@@ -1,6 +1,6 @@
 from env import *
 
-DATA_PATH = "data/input1124.xls"
+DATA_PATH = "data/input1208.xls"
 
 # random_algo(DATA_PATH)
 # baseline_algo(DATA_PATH)
