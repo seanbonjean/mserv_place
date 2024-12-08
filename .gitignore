@@ -2,5 +2,6 @@
 __pycache__
 model.rlp
 output/*
-data/realworld_BS/realworld_BS.xls
+data/realworld_BS/realworld_BS*
 data/rand_gen/rand.txt
+data/test_input_old*

@@ -4,6 +4,8 @@ import xlrd as rd, xlwt as wt
 import math
 from dijkstra import get_shortest_path, calculate_speed
 
+BAND_VALUE = 0.02
+
 
 def haversine(BS1: tuple, BS2: tuple) -> float:
     """
@@ -41,11 +43,14 @@ def channel_gen(distance_threshold: float, read_path: str, write_path: str) -> N
             distances[(BS1[0], BS2[0])] = haversine(BS1, BS2)
 
     sparse_channel = {}
+    connectivity = []
     # 将距离低于某一阈值的两基站连通，计算非全连接的信道速率
     for (i, j), distance in distances.items():
         if distance < distance_threshold:
-            sparse_channel[(i, j)] = 100 / distance  # TODO: 需要定义信道速率计算公式
-            sparse_channel[(j, i)] = 100 / distance
+            tran_rate = BAND_VALUE * math.log(1 + (0.5 * (127 + 30 * math.log(distance, 10))) / (2 * 10 ** (-13)), 2)
+            sparse_channel[(i, j)] = tran_rate
+            sparse_channel[(j, i)] = tran_rate
+            connectivity.append((i, j))
 
     full_channel = {}
     # 调用dijkstra算法补充未连接节点，生成全连接的信道速率
@@ -64,11 +69,18 @@ def channel_gen(distance_threshold: float, read_path: str, write_path: str) -> N
     for i in range(len(BS_list)):
         for j in range(len(BS_list)):
             sheet.write(i, j, full_channel[(i, j)])
+    sheet = write_book.add_sheet("connect")
+    for i in range(len(BS_list)):
+        for j in range(len(BS_list)):
+            if (i, j) in connectivity:
+                sheet.write(i, j, 1)
+            else:
+                sheet.write(i, j, 0)
     write_book.save(write_path)
 
 
 if __name__ == '__main__':
-    READ_PATH = "realworld_BS.xls"
+    READ_PATH = "realworld_BS_new1208.xls"
     WRITE_PATH = "channel.xls"
-    THRESHOLD = 500  # TODO: 需要定义距离阈值
+    THRESHOLD = 30  # 连通BS的距离阈值
     channel_gen(THRESHOLD, READ_PATH, WRITE_PATH)
