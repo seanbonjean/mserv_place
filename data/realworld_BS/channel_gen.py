@@ -3,6 +3,9 @@ from tkinter import READABLE
 import xlrd as rd, xlwt as wt
 import math
 from dijkstra import get_shortest_path, calculate_speed
+import networkx as nx
+import matplotlib.pyplot as plt
+import random
 
 BAND_VALUE = 0.02
 
@@ -23,7 +26,7 @@ def haversine(BS1: tuple, BS2: tuple) -> float:
     return distance
 
 
-def channel_gen(distance_threshold: float, read_path: str, write_path: str) -> None:
+def channel_gen(node_num: int, distance_threshold: float, read_path: str, write_path: str) -> None:
     """
     根据基站经纬度数据，生成基站间信道速率
     distance_threshold: 距离阈值，基站间距离<阈值 即视为基站间相连通
@@ -32,7 +35,7 @@ def channel_gen(distance_threshold: float, read_path: str, write_path: str) -> N
     read_book = rd.open_workbook(read_path)
     sheet = read_book.sheet_by_index(0)
     BS_list = []
-    for i in range(1, sheet.nrows):
+    for i in range(1, sheet.nrows):  # ! 首行是标题，跳过
         line = sheet.row_values(i)
         BS_list.append((i - 1, line[4], line[5]))
 
@@ -52,6 +55,47 @@ def channel_gen(distance_threshold: float, read_path: str, write_path: str) -> N
             sparse_channel[(j, i)] = tran_rate
             connectivity.append((i, j))
 
+    # 创建图
+    G = nx.Graph()
+    # 将连接关系添加到图中
+    G.add_nodes_from(range(node_num))
+    G.add_edges_from(connectivity)
+    # 绘制图
+    plt.figure(figsize=(8, 6))
+    nx.draw(G, with_labels=True, node_color='skyblue', node_size=3000, font_size=15, font_weight='bold',
+            edge_color='gray')
+    plt.title('Topology Graph')
+    plt.show()
+    # 检查图的连通性
+    components = list(nx.connected_components(G))
+    print("Connected components:", components)
+    # 如果有多个孤岛，选择每个孤岛中的一个节点来连接它们
+    if len(components) > 1:
+        print("存在孤岛，开始连接它们。")
+        # 随机选择每个孤岛的一个节点
+        island_nodes = [random.choice(list(island)) for island in components]
+        # 连接孤岛
+        for i in range(len(island_nodes) - 1):
+            node1 = island_nodes[i]
+            node2 = island_nodes[i + 1]
+            # 添加链路
+            G.add_edge(node1, node2)
+            # 将新的连接添加到图中
+            print(f"连接节点 {node1} 和 {node2}")
+            distance = distances[(node1, node2)] if node1 < node2 else distances[(node2, node1)]
+            tran_rate = BAND_VALUE * math.log(1 + (0.5 * (127 + 30 * math.log(distance, 10))) / (2 * 10 ** (-13)), 2)
+            sparse_channel[(node1, node2)] = tran_rate
+            sparse_channel[(node2, node1)] = tran_rate
+            connectivity.append((node1, node2))
+        # 重新绘制图
+        plt.figure(figsize=(8, 6))
+        nx.draw(G, with_labels=True, node_color='skyblue', node_size=3000, font_size=15, font_weight='bold',
+                edge_color='gray')
+        plt.title('Topology Graph After Connecting Islands')
+        plt.show()
+    else:
+        print("没有孤岛，图是连通的。")
+
     full_channel = {}
     # 调用dijkstra算法补充未连接节点，生成全连接的信道速率
     for i in range(len(BS_list)):
@@ -59,7 +103,7 @@ def channel_gen(distance_threshold: float, read_path: str, write_path: str) -> N
             if i == j:
                 full_channel[(i, j)] = -1
                 continue
-            path = get_shortest_path(sparse_channel, sheet.nrows, i, j)
+            path = get_shortest_path(sparse_channel, node_num, i, j)
             speed = calculate_speed(path, sparse_channel)
             full_channel[(i, j)] = speed
 
@@ -82,7 +126,8 @@ def channel_gen(distance_threshold: float, read_path: str, write_path: str) -> N
 
 
 if __name__ == '__main__':
-    READ_PATH = "realworld_BS_new1208.xls"
-    WRITE_PATH = "channel.xls"
+    READ_PATH = "realworld_BSx20_1209.xls"
+    WRITE_PATH = "channel_x20_1209.xls"
+    NODE_NUM = 20
     THRESHOLD = 30  # 连通BS的距离阈值
-    channel_gen(THRESHOLD, READ_PATH, WRITE_PATH)
+    channel_gen(NODE_NUM, THRESHOLD, READ_PATH, WRITE_PATH)
