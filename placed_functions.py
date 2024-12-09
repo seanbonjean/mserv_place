@@ -203,6 +203,7 @@ def place_mserv(upper_bound:dict, ksi: float,edge_nodes:list, mservs:list, users
             'hub_nodes 枢纽节点列表':hub_nodes, # 枢纽节点列表
             'original_node_group 原始未加入枢纽节点前的节点群':original_node_group # 原始节点群
             })
+    print("mserv placed end 放置微服务结束，结果如下: ")
     print(mserv_process_info)
     return mserv_process_info
 
