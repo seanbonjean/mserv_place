@@ -15,6 +15,7 @@ def gurobi_solve(edge_nodes: list, mservs: list, users: list, channel: dict) -> 
     C_max = CONSTANTS.MAX_DEPLOY_COST
 
     model = Model("microservice-placement")
+    model.setParam(GRB.Param.TimeLimit, 5)
     # model.setParam(GRB.Param.TimeLimit, 60 * 60 * 10.0) # 10 hour
 
     # 添加决策变量
@@ -98,7 +99,7 @@ def gurobi_solve(edge_nodes: list, mservs: list, users: list, channel: dict) -> 
     model.optimize()
 
     # 输出结果
-    if model.status != GRB.OPTIMAL:
+    if model.status != GRB.OPTIMAL and model.status != GRB.TIME_LIMIT:
         print(f"No optimum solution found. Status: {model.status}")
     else:
         print("Optimal solution found")

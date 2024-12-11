@@ -38,7 +38,7 @@ def getNodeByNodeNum(node_num: int, edge_nodes: list):
     return None
 
 
-def place_mserv(upper_bound: dict, ksi: float, edge_nodes: list, mservs: list, users: list, channelrate_dict: list,
+def place_mserv(upper_bound: dict, ksi: float, edge_nodes: list, mservs: list, users: list, channelrate_dict: dict,
                 channel_connectivity: dict, mserv_receive_data_count: dict, mserv_user_count: dict) -> dict:
     print("mserv placed start")
     mserv_process_info = []  # 元素为 dict，包含信息：{微服务序号 num、放置节点列表 node_list、枢纽节点列表 hub_nodes、节点群列表 node_group、节点群被分配的微服务数目 allocate_mserv_to_node_group_result}

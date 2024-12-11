@@ -8,25 +8,74 @@ from functools import partial
 from joblib import Parallel, delayed
 import FuzzyAHP as fahp
 from values import CONSTANTS
+from placed_functions import *
 
 
-def parallel_task(mserv_num: int, pre_place_mservs: list, fixed_place_mservs: list,
-                  obj_before: float, data: tuple) -> tuple:
+def get_reliance_node(user_node: int, target_nodes: list, channel: dict) -> int:
+    """
+    如果用户所在节点到某节点的速率最快，认为用户是依赖该节点的
+    """
+    max_speed = 0
+    max_node = -1
+    for other_node in target_nodes:
+        if channel[(user_node, other_node)] > max_speed:
+            max_speed = channel[(user_node, other_node)]
+            max_node = other_node
+    if max_node == -1:
+        raise ValueError
+    return max_node
+
+
+def build_placed_nodes(current_deploy: list) -> list:
+    placed_nodes = []
+    for mserv_num in range(len(current_deploy)):
+        placed_nodes.append(flatten_list(current_deploy[mserv_num]))
+
+    return placed_nodes
+
+def flatten_list(lst: list) -> list:
+    """将多维列表展平为1维列表"""
+    flattened_list = []
+    for group in lst:
+        flattened_list += group
+    return flattened_list
+
+def parallel_task(mserv_num: int, partition: list, current_deploy: list, fixed_place_mservs: list,
+                  receive: dict, data: tuple) -> tuple:
     """对需要并行执行的代码进行封装"""
-    mserv_max_delta = (-math.inf, -1, -1)  # 针对该微服务的最大delta记录器
-    pre_place_node_set = pre_place_mservs[mserv_num]  # 拟放置该微服务的边缘节点集合
-    if len(pre_place_node_set) <= 1:
-        return -math.inf, -1, -1
-    for node_num in pre_place_node_set:  # 逐个尝试，去掉一个节点
-        if node_num in fixed_place_mservs[mserv_num]:  # 如果该节点已经固定放置，则跳过
-            continue
-        obj_after, _, _ = calc_objFunc(pre_place_mservs[:mserv_num] +
-                                       [pre_place_node_set - {node_num}] +
-                                       pre_place_mservs[mserv_num + 1:], data)
-        delta = obj_before - obj_after
-        if delta > mserv_max_delta[0]:  # 记录最大的delta
-            mserv_max_delta = (delta, mserv_num, node_num)
-    return mserv_max_delta
+    mserv_min_zeta = (math.inf, -1, -1, -1)  # 针对该微服务的最小zeta记录器
+
+    edge_nodes, mservs, users, channel = data
+    mserv_partition = partition[mserv_num]  # 该微服务的分组
+    mserv_deploy = current_deploy[mserv_num]  # 该微服务的放置情况
+
+    partition_nodes = flatten_list(mserv_partition)
+    deployed = flatten_list(mserv_deploy)
+
+    # 该微服务至少放1个，如果已经只剩1个了就退出
+    if len(deployed) <= 1:
+        return math.inf, -1, -1, -1
+
+    for group_num, group in enumerate(mserv_deploy):
+        for node_num in group:
+            if node_num in fixed_place_mservs[mserv_num]:  # 如果该节点已经固定放置，则跳过
+                continue
+            user_node_list = []  # 原先依赖该节点上的微服务，现在由于该节点取消放置微服务从而受影响的用户节点列表
+            for user_node_num in receive[mserv_num]:  # 取“有用户请求该微服务”的节点
+                if get_reliance_node(user_node_num, deployed, channel) == node_num:  # 如果用户请求节点依赖该节点，则先添入待选列表
+                    user_node_list.append(node_num)
+            zeta = 0
+            for user_node_num in user_node_list:
+                deployed_discard = [node for node in deployed if node != node_num]  # 已放置微服务的节点列表，除去当前计算zeta的节点
+                new_reliance_node = get_reliance_node(user_node_num, deployed_discard, channel)
+                zeta += receive[mserv_num][user_node_num] / channel[(user_node_num, new_reliance_node)]
+                zeta += mservs[mserv_num].request_resource / edge_nodes[new_reliance_node].computing_power
+                zeta -= receive[mserv_num][user_node_num] / channel[(user_node_num, node_num)]
+                zeta -= mservs[mserv_num].request_resource / edge_nodes[node_num].computing_power
+            if zeta < mserv_min_zeta[0]:  # 记录最小的zeta
+                mserv_min_zeta = (zeta, mserv_num, group_num, node_num)
+
+    return mserv_min_zeta
 
 
 def calc_objFunc(place_strategy: list, data: tuple) -> tuple:
@@ -237,6 +286,19 @@ def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict, c
         for mserv_num, req_count in mserv_count_dict.items():  # 该节点上有用户请求的微服务序号、请求用户个数
             mserv_req_nums[mserv_num][node_num] = req_count
 
+    mserv_user_count = count_mserv_user(mservs, users)  # 核对过，和mserv_req_nums是一样的
+    mserv_receive_data_count = count_mserv_receive_dataflow(mservs, users)
+    ksi = 0.6
+    upper_bound_dict = {key: value for key, value in enumerate(upper_bound)}
+    partition_and_pre_deploy_info = place_mserv(upper_bound_dict, ksi, edge_nodes, mservs, users, channel, connect,
+                                                mserv_receive_data_count, mserv_user_count)
+    partition = []
+    initial_deploy = []
+    for mserv_num, info in enumerate(partition_and_pre_deploy_info):
+        partition.append(info['devide_node_group 被划分的节点群'])
+        initial_deploy.append(info['mserv_place_node_list 微服务放置节点'])
+
+    """
     # 针对每种微服务，如果请求它的节点数量比upper bound中计算的“能放的最多数量”要少，则这些节点上全部拟放置该微服务；
     # 否则，按照请求用户个数由大到小排序，依次拟放置该微服务（注意：拟放置是指合并前的预先放置，不是真正放置下去，它没有考虑总cost限制和内存限制）
     pre_place_mservs = [set() for _ in range(microservice_count)]  # 拟放置微服务情况记录，第一维是微服务种类序号，第二维是边缘节点序号的集合
@@ -254,6 +316,7 @@ def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict, c
         else:
             for node_num in node_req_count:  # 如果该微服务请求的节点数小于其上界，则这些节点上都拟放置该微服务
                 pre_place_mservs[mserv_num].add(node_num)
+    """
 
     """
     # 初始放置最优解测试
@@ -268,6 +331,8 @@ def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict, c
     for mserv_num, req_nums in enumerate(mserv_req_nums):
         print(mserv_num, sum(req_nums.values()), req_nums)
     print()
+
+    """
     print("拟放置微服务情况")
     print("微服务序号 | 拟放置节点")
     for mserv_num, placed_nodes in enumerate(pre_place_mservs):
@@ -279,30 +344,36 @@ def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict, c
     print("微服务序号 | global factor")
     for mserv_num, gf in enumerate(g_factor):
         print(f"{mserv_num}: {gf}")
+    """
 
     # 贪婪合并，寻找梯度(delta)最大的合并方案
     max_delta = (math.inf, -1, -1)  # 初始化最大delta记录器
     # max_delta元组形式：(delta值, 微服务对应的mserv_num, 合并去掉的节点node_num)
+    min_zeta = (math.inf, -1, -1, -1)
+    # min_zeta元组形式：(zeta值, 微服务对应的mserv_num, 节点所在的group, 合并去掉的节点node_num)
+    current_deploy = initial_deploy
     fixed_place_mservs = [set() for _ in range(microservice_count)]  # 固定放置不动的微服务列表
     loop_count = 0
     start_time = time.time()
     time_elapsed = 0.0
     allow_stop_flag = False
-    while max_delta[0] > 0 or not allow_stop_flag:  # 迭代停止条件：合并后，目标函数值没有变化，甚至反向变大
+    break_flag = False
+    while max_delta[0] > -150 or not allow_stop_flag:  # 迭代停止条件：合并后，目标函数值没有变化，甚至反向变大
         loop_count += 1
         print()
         print(f"第{loop_count}轮合并")
         max_delta = (-math.inf, -1, -1)
-        obj_before, _, _ = calc_objFunc(pre_place_mservs, data)
+        placed_nodes = build_placed_nodes(current_deploy)
+        obj_before, _, _ = calc_objFunc(placed_nodes, data)
         if obj_before == math.inf:
             raise Exception("合并前即无解")
 
-        parallel_task_fixed = partial(parallel_task, pre_place_mservs=pre_place_mservs,
-                                      fixed_place_mservs=fixed_place_mservs,
-                                      obj_before=obj_before, data=data)  # 固定相同的参数
-        mserv_max_deltas = Parallel(n_jobs=-1)(
-            delayed(parallel_task_fixed)(i) for i in range(microservice_count))  # 计算各并行任务中，各微服务的最大delta
-        max_delta = max(mserv_max_deltas, key=lambda x: x[0])
+        parallel_task_fixed = partial(parallel_task, partition=partition, current_deploy=current_deploy,
+                                      fixed_place_mservs=fixed_place_mservs, receive=mserv_receive_data_count,
+                                      data=data)  # 固定相同的参数
+        mserv_min_zetas = Parallel(n_jobs=-1)(
+            delayed(parallel_task_fixed)(i) for i in range(microservice_count))  # 计算各并行任务中，各微服务的最小zeta
+        min_zeta = min(mserv_min_zetas, key=lambda x: x[0])
         """
         process_num = os.cpu_count()  # 允许同时存在的进程数，令其值为CPU核心数
         with ProcessPoolExecutor(max_workers=process_num) as executor:
@@ -332,20 +403,24 @@ def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict, c
                     max_delta = (delta, mserv_num, node_num)
         """
         # 如果全都只剩1个微服务，无法再继续合并
-        if max_delta[1] == -1:
+        if min_zeta[1] == -1:
             print("无法再继续合并")
+            break_flag = True
         else:
             # 更新放置情况集合
-            pre_place_mservs = (pre_place_mservs[:max_delta[1]] +
-                                [pre_place_mservs[max_delta[1]] - {max_delta[2]}] +
-                                pre_place_mservs[max_delta[1] + 1:])
-            print(f"第{max_delta[1]}个微服务在节点{max_delta[2]}上被合并去掉")
+            current_deploy[min_zeta[1]][min_zeta[2]].remove(min_zeta[3])
+            #pre_place_mservs = (pre_place_mservs[:max_delta[1]] +
+            #                    [pre_place_mservs[max_delta[1]] - {max_delta[2]}] +
+            #                    pre_place_mservs[max_delta[1] + 1:])
+            print(f"第{min_zeta[1]}个微服务在节点{min_zeta[3]}上被合并去掉")
             print("合并后的放置情况集合：")
-            print(pre_place_mservs)
+            print(current_deploy)
             print("当前微服务固定情况：")
             print(fixed_place_mservs)
         # 判断主问题、子问题是否满足约束
-        obj, cost, makespans = calc_objFunc(pre_place_mservs, data)
+        placed_nodes = build_placed_nodes(current_deploy)
+        obj, cost, makespans = calc_objFunc(placed_nodes, data)
+        max_delta = (obj_before - obj, min_zeta[1], min_zeta[3])
         print("目标函数值(C+T)：", obj)
         if cost > CONSTANTS.MAX_DEPLOY_COST:
             print("主问题cost超过最大限制，主问题infeasible")
@@ -355,13 +430,13 @@ def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict, c
             for node in edge_nodes:
                 total_memory += node.memory
             total_memory_demand = 0  # 拟放置的所有微服务需求的内存总量
-            for mserv_num, node_set in enumerate(pre_place_mservs):
+            for mserv_num, node_set in enumerate(placed_nodes):
                 total_memory_demand += mservs[mserv_num].memory_demand * len(node_set)
             if total_memory_demand <= total_memory:
                 print("节点总内存 > 当前拟放置微服务总需求内存，考虑进行内存检查")
                 print("***进行内存检查与微服务迁移***")
                 l_factor = calc_localFactor()
-                migrated_pre_place_mservs = memory_checkAndMigrate(pre_place_mservs, l_factor)
+                migrated_pre_place_mservs = memory_checkAndMigrate(placed_nodes, l_factor)
                 if not migrated_pre_place_mservs:
                     print("迁移过程中没有节点内存足够接收移出的微服务")
                 else:
@@ -380,12 +455,14 @@ def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict, c
             print("其中如下用户的makespan超出限制：")
             for user_num, makespan in violate_list:
                 print(f"用户{user_num}的makespan为{makespan}")
-            print(f"将第{max_delta[1]}个微服务在节点{max_delta[2]}上进行固定")
-            fixed_place_mservs[max_delta[1]].add(max_delta[2])  # 记录固定微服务
-            pre_place_mservs[max_delta[1]].add(max_delta[2])  # 固定的微服务加回拟放置集合
+            print(f"将第{min_zeta[1]}个微服务在节点{min_zeta[3]}上进行固定")
+            fixed_place_mservs[min_zeta[1]].add(min_zeta[3])  # 记录固定微服务
+            current_deploy[min_zeta[1]][min_zeta[2]].append(min_zeta[3])  # 固定的微服务加回拟放置集合
         else:
             print("子问题feasible，总makespan=", sum(makespans))
 
         print()
         time_elapsed = time.time() - start_time
         print(f"已用时{time_elapsed:.2f} sec")
+        if break_flag:
+            break
