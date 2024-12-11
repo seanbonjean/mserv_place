@@ -133,8 +133,14 @@ def place_mserv(upper_bound: dict, ksi: float, edge_nodes: list, mservs: list, u
                 if len(connectivity_node_list) >= 3:
                     # 计算这些“无请求节点”的一组Δa=放枢纽 – 放va（va的个数就是第1步时节点群内节点数，即有用户请求节点的节点数），计算Δa的顺序按va的“连通性”从小到大排序的顺序，只要计算到有某个Δa<0就把该无用户请求的节点放入这个节点群，如果遍历后全都>0就不放入
                     # 公式左边 放枢纽 sigma 计算（似乎只需要计算一次就行）
+                    # hub_node_tran_time = sum([mserv_receive_data_count[mserv.num][other_node] / channelrate_dict[
+                    #     (connected_node_index, other_node)] for other_node in connectivity_node_list])
+                    # 改为计算全部节点群内的全部节点
+                    # 确认一下公式里的 ri
                     hub_node_tran_time = sum([mserv_receive_data_count[mserv.num][other_node] / channelrate_dict[
-                        (connected_node_index, other_node)] for other_node in connectivity_node_list])
+                        (connected_node_index, other_node)] for other_node in single_node_group])
+                    # 连通节点排序，按连通节点权值排序
+                    connectivity_node_list = sorted(connectivity_node_list, key=lambda x: list(connected_weight_order_map.keys()).index(x))
                     for other_node in connectivity_node_list:
                         delta = hub_node_tran_time - sum([mserv_receive_data_count[mserv.num][group_node] /
                                                           channelrate_dict[(group_node, other_node)] for group_node in
@@ -190,9 +196,8 @@ def place_mserv(upper_bound: dict, ksi: float, edge_nodes: list, mservs: list, u
         for node_group_index, single_node_group in enumerate(node_group):
             # 如果预算数等于节点数就直接放满
             if allocate_mserv_to_node_group_result[node_group_index] >= len(single_node_group):
-                for node in single_node_group:
-                    allocate_mserv_result.append(node)
-                continue
+                # 该节点群被分配的微服务数目等于节点数时，不要一个个放，不然会变成一维数组
+                allocate_mserv_result.append(copy.deepcopy(single_node_group))
             else:
                 # 依次往每个节点上只放置一个微服务，计算节点群内的对于该微服务的总makespan
                 makespan_map = {}
