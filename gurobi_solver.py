@@ -15,7 +15,7 @@ def gurobi_solve(edge_nodes: list, mservs: list, users: list, channel: dict) -> 
     C_max = CONSTANTS.MAX_DEPLOY_COST
 
     model = Model("microservice-placement")
-    model.setParam(GRB.Param.TimeLimit, 5)
+    model.setParam(GRB.Param.TimeLimit, 111)
     # model.setParam(GRB.Param.TimeLimit, 60 * 60 * 10.0) # 10 hour
 
     # 添加决策变量

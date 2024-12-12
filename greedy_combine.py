@@ -15,7 +15,7 @@ def get_reliance_node(user_node: int, target_nodes: list, channel: dict) -> int:
     """
     如果用户所在节点到某节点的速率最快，认为用户是依赖该节点的
     """
-    max_speed = 0
+    max_speed = -2  # 因为node自己到自己的channel定为了-1，所以初始化-2，确保能选上自己（node自己上的用户依赖自己上的微服务）
     max_node = -1
     for other_node in target_nodes:
         if channel[(user_node, other_node)] > max_speed:
@@ -33,12 +33,14 @@ def build_placed_nodes(current_deploy: list) -> list:
 
     return placed_nodes
 
+
 def flatten_list(lst: list) -> list:
     """将多维列表展平为1维列表"""
     flattened_list = []
     for group in lst:
         flattened_list += group
     return flattened_list
+
 
 def parallel_task(mserv_num: int, partition: list, current_deploy: list, fixed_place_mservs: list,
                   receive: dict, data: tuple) -> tuple:
@@ -62,15 +64,21 @@ def parallel_task(mserv_num: int, partition: list, current_deploy: list, fixed_p
                 continue
             user_node_list = []  # 原先依赖该节点上的微服务，现在由于该节点取消放置微服务从而受影响的用户节点列表
             for user_node_num in receive[mserv_num]:  # 取“有用户请求该微服务”的节点
+                if user_node_num == node_num:  # 如果用户节点就是自己，虽然当前自己上还有微服务，但下面就要计算去掉时的影响，所以应该算上自己
+                    user_node_list.append(user_node_num)
+                    continue
+                if user_node_num in deployed:  # 如果这个用户所在节点上有微服务，它会直接依赖自己节点上的微服务
+                    continue
                 if get_reliance_node(user_node_num, deployed, channel) == node_num:  # 如果用户请求节点依赖该节点，则先添入待选列表
-                    user_node_list.append(node_num)
+                    user_node_list.append(user_node_num)
             zeta = 0
             for user_node_num in user_node_list:
                 deployed_discard = [node for node in deployed if node != node_num]  # 已放置微服务的节点列表，除去当前计算zeta的节点
                 new_reliance_node = get_reliance_node(user_node_num, deployed_discard, channel)
                 zeta += receive[mserv_num][user_node_num] / channel[(user_node_num, new_reliance_node)]
                 zeta += mservs[mserv_num].request_resource / edge_nodes[new_reliance_node].computing_power
-                zeta -= receive[mserv_num][user_node_num] / channel[(user_node_num, node_num)]
+                if user_node_num != node_num:
+                    zeta -= receive[mserv_num][user_node_num] / channel[(user_node_num, node_num)]
                 zeta -= mservs[mserv_num].request_resource / edge_nodes[node_num].computing_power
             if zeta < mserv_min_zeta[0]:  # 记录最小的zeta
                 mserv_min_zeta = (zeta, mserv_num, group_num, node_num)
@@ -374,6 +382,9 @@ def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict, c
         mserv_min_zetas = Parallel(n_jobs=-1)(
             delayed(parallel_task_fixed)(i) for i in range(microservice_count))  # 计算各并行任务中，各微服务的最小zeta
         min_zeta = min(mserv_min_zetas, key=lambda x: x[0])
+        print(
+            "各微服务各自实例的实例最小zeta列表（列表按mserv序号索引，每个元素是一个微服务实例的属性，为元组(zeta值,微服务序号,分组序号,节点序号)）")
+        print(mserv_min_zetas)
         """
         process_num = os.cpu_count()  # 允许同时存在的进程数，令其值为CPU核心数
         with ProcessPoolExecutor(max_workers=process_num) as executor:
@@ -409,7 +420,7 @@ def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict, c
         else:
             # 更新放置情况集合
             current_deploy[min_zeta[1]][min_zeta[2]].remove(min_zeta[3])
-            #pre_place_mservs = (pre_place_mservs[:max_delta[1]] +
+            # pre_place_mservs = (pre_place_mservs[:max_delta[1]] +
             #                    [pre_place_mservs[max_delta[1]] - {max_delta[2]}] +
             #                    pre_place_mservs[max_delta[1] + 1:])
             print(f"第{min_zeta[1]}个微服务在节点{min_zeta[3]}上被合并去掉")
