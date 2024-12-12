@@ -126,8 +126,8 @@ def channel_gen(node_num: int, distance_threshold: float, read_path: str, write_
 
 
 if __name__ == '__main__':
-    READ_PATH = "realworld_BSx30_1209.xls"
-    WRITE_PATH = "channel_x30_1209.xls"
-    NODE_NUM = 30
+    READ_PATH = "realworld_BSx25_1212.xls"
+    WRITE_PATH = "channel_x25_1212.xls"
+    NODE_NUM = 25
     THRESHOLD = 30  # 连通BS的距离阈值
     channel_gen(NODE_NUM, THRESHOLD, READ_PATH, WRITE_PATH)
