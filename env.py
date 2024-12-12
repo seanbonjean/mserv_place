@@ -41,5 +41,5 @@ def combine_algo(data_path: str) -> None:
     redirector = RedirectStdoutToFileAndConsole("output/combine.txt")
     redirector.start()
     edgenode_list, microservice_list, user_list, channelrate_dict, channel_connectivity = load_data(data_path)
-    greedy_combine(edgenode_list, microservice_list, user_list, channelrate_dict, channel_connectivity)
+    greedy_combine(edgenode_list, microservice_list, user_list, channelrate_dict, channel_connectivity, 0.5)
     redirector.stop()
