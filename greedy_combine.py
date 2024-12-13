@@ -10,7 +10,6 @@ import FuzzyAHP as fahp
 from values import CONSTANTS
 from placed_functions import *
 
-
 def get_reliance_node(user_node: int, target_nodes: list, channel: dict) -> int:
     """
     如果用户所在节点到某节点的速率最快，认为用户是依赖该节点的
@@ -158,8 +157,24 @@ def calc_objFunc(place_strategy: list, data: tuple) -> tuple:
         return total_cost + model.objVal, total_cost, list(map(lambda x: x.getValue(), makespan))
     return math.inf, 0, [0] * task_count
 
+def get_adjacent_mservs(mserv_num: int, users: list) -> list:
+    """
+    获取指定微服务前后相邻的微服务
+    """
+    adjacent_mservs = []
+    for user in users:
+        if mserv_num in user.mserv_dependency:
+            mserv_index = user.mserv_dependency.index(mserv_num)
+            # 加入前一个微服务
+            if mserv_index>0:
+                adjacent_mservs.append(user.mserv_dependency[mserv_index-1])
+            # 加入后一个微服务
+            if mserv_index<len(user.mserv_dependency)-1:
+                adjacent_mservs.append(user.mserv_dependency[mserv_index+1])
+    adjacent_mservs = list(set(adjacent_mservs)) # 去重
+    return adjacent_mservs
 
-def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict, connect: dict) -> None:
+def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict, connect: dict, zeta_min_select_proportion:float) -> None:
     data = edge_nodes, mservs, users, channel
     edgenode_count = len(edge_nodes)
     microservice_count = len(mservs)
@@ -381,10 +396,14 @@ def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict, c
                                       data=data)  # 固定相同的参数
         mserv_min_zetas = Parallel(n_jobs=-1)(
             delayed(parallel_task_fixed)(i) for i in range(microservice_count))  # 计算各并行任务中，各微服务的最小zeta
-        min_zeta = min(mserv_min_zetas, key=lambda x: x[0])
+        min_zeta = min(mserv_min_zetas, key=lambda x: x[0]) # zeta值,微服务序号,分组序号,节点序号
         print(
             "各微服务各自实例的实例最小zeta列表（列表按mserv序号索引，每个元素是一个微服务实例的属性，为元组(zeta值,微服务序号,分组序号,节点序号)）")
         print(mserv_min_zetas)
+        # 选择一定比例的微服务进行合并，先将其排序
+        mserv_min_zetas_sorted = sorted(mserv_min_zetas, key=lambda x: x[0])
+        # 取前面一定比例的最小zeta值微服务进行合并，此为合并数
+        mserv_merge_num = round(zeta_min_select_proportion * len(mserv_min_zetas_sorted))
         """
         process_num = os.cpu_count()  # 允许同时存在的进程数，令其值为CPU核心数
         with ProcessPoolExecutor(max_workers=process_num) as executor:
@@ -414,16 +433,28 @@ def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict, c
                     max_delta = (delta, mserv_num, node_num)
         """
         # 如果全都只剩1个微服务，无法再继续合并
+        merged_mservs=[]
         if min_zeta[1] == -1:
             print("无法再继续合并")
             break_flag = True
         else:
             # 更新放置情况集合
-            current_deploy[min_zeta[1]][min_zeta[2]].remove(min_zeta[3])
+            # current_deploy[min_zeta[1]][min_zeta[2]].remove(min_zeta[3])
+            # 移除升序排列后的zeta列表按比例前几个的微服务所在节点
+            wait_to_merge_mserv=mserv_min_zetas_sorted[:mserv_merge_num]
+            skip_mservs=[]
+            # merged_mservs=[]
+            for mserv_min_zeta in wait_to_merge_mserv:
+                if mserv_min_zeta[1] in skip_mservs:
+                    continue
+                current_deploy[mserv_min_zeta[1]][mserv_min_zeta[2]].remove(mserv_min_zeta[3])
+                skip_mservs.extend(get_adjacent_mservs(mserv_min_zeta[1], users)) # 将相邻微服务加入跳过列表
+                merged_mservs.append(mserv_min_zeta)
             # pre_place_mservs = (pre_place_mservs[:max_delta[1]] +
             #                    [pre_place_mservs[max_delta[1]] - {max_delta[2]}] +
             #                    pre_place_mservs[max_delta[1] + 1:])
-            print(f"第{min_zeta[1]}个微服务在节点{min_zeta[3]}上被合并去掉")
+            for mserv_min_zeta in merged_mservs:
+                print(f"第{mserv_min_zeta[1]}个微服务在节点{mserv_min_zeta[3]}上被合并去掉")
             print("合并后的放置情况集合：")
             print(current_deploy)
             print("当前微服务固定情况：")
@@ -457,20 +488,27 @@ def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict, c
                     print("迁移后主问题cost=", cost)
             else:
                 print("节点总内存 < 当前拟放置微服务总需求内存，不进行内存检查，认为主问题infeasible")
-        violate_list = []
-        for user_num, makespan in enumerate(makespans):
-            if makespan > CONSTANTS.MAX_MAKESPAN:
-                violate_list.append((user_num, makespan))
-        if violate_list:
-            print("子问题makespan超过最大限制，子问题infeasible，总makespan=", sum(makespans))
-            print("其中如下用户的makespan超出限制：")
-            for user_num, makespan in violate_list:
-                print(f"用户{user_num}的makespan为{makespan}")
-            print(f"将第{min_zeta[1]}个微服务在节点{min_zeta[3]}上进行固定")
-            fixed_place_mservs[min_zeta[1]].add(min_zeta[3])  # 记录固定微服务
-            current_deploy[min_zeta[1]][min_zeta[2]].append(min_zeta[3])  # 固定的微服务加回拟放置集合
-        else:
-            print("子问题feasible，总makespan=", sum(makespans))
+
+            violate_list = []
+            for user_num, makespan in enumerate(makespans):
+                if makespan > CONSTANTS.MAX_MAKESPAN:
+                    violate_list.append((user_num, makespan))
+            if violate_list:
+                print("子问题makespan超过最大限制，子问题infeasible，总makespan=", sum(makespans))
+                print("其中如下用户的makespan超出限制：")
+                for user_num, makespan in violate_list:
+                    print(f"用户{user_num}的makespan为{makespan}")
+                print(f"将第{min_zeta[1]}个微服务在节点{min_zeta[3]}上进行固定")
+                # TODO: 确认是否这里也要批量放入
+                # fixed_place_mservs[min_zeta[1]].add(min_zeta[3])  # 记录固定微服务
+                for mserv_min_zeta in merged_mservs:
+                    fixed_place_mservs[mserv_min_zeta[1]].add(mserv_min_zeta[3])
+                # TODO: 预计修改
+                # current_deploy[min_zeta[1]][min_zeta[2]].append(min_zeta[3])  # 固定的微服务加回拟放置集合
+                for mserv_min_zeta in merged_mservs:
+                    current_deploy[mserv_min_zeta[1]][mserv_min_zeta[2]].append(mserv_min_zeta[3])
+            else:
+                print("子问题feasible，总makespan=", sum(makespans))
 
         print()
         time_elapsed = time.time() - start_time
