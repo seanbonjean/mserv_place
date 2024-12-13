@@ -442,11 +442,16 @@ def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict, c
             # current_deploy[min_zeta[1]][min_zeta[2]].remove(min_zeta[3])
             # 移除升序排列后的zeta列表按比例前几个的微服务所在节点
             wait_to_merge_mserv=mserv_min_zetas_sorted[:mserv_merge_num]
+            wait_to_merge_mserv=[t for t in wait_to_merge_mserv if t[0] != math.inf]
+            # print("mserv_min_zetas_sorted: ", mserv_min_zetas_sorted)
             skip_mservs=[]
             # merged_mservs=[]
+            # print("min_zta_list: ", wait_to_merge_mserv)
             for mserv_min_zeta in wait_to_merge_mserv:
                 if mserv_min_zeta[1] in skip_mservs:
                     continue
+                # print(f"第{mserv_min_zeta[1]}个微服务在节点{mserv_min_zeta[3]}上被合并去掉")
+                # print(f"curren_deploy: {current_deploy}")
                 current_deploy[mserv_min_zeta[1]][mserv_min_zeta[2]].remove(mserv_min_zeta[3])
                 skip_mservs.extend(get_adjacent_mservs(mserv_min_zeta[1], users)) # 将相邻微服务加入跳过列表
                 merged_mservs.append(mserv_min_zeta)
