@@ -1,6 +1,8 @@
 import random
+from placed_functions import count_mserv_user
 from utils import *
 from values import CONSTANTS
+from copy import deepcopy
 
 
 def get_mserv_distri(edge_nodes: list) -> dict:
@@ -20,19 +22,42 @@ def random_mserv_place(edge_nodes: list, mservs: list) -> None:
     """
     random的解，每个微服务随机放在某个边缘节点上
     """
-    for mserv in mservs:
-        is_placed = False
-        fail_count = 0
-        while not is_placed:  # 循环直到遇到有边缘节点能放下
-            rand_node = random.randint(0, len(edge_nodes) - 1)
-            is_placed = edge_nodes[rand_node].place_mserv(mserv)
-            fail_count += 1
-            # 如果每个边缘节点都已经满了，防止死循环
-            if fail_count > len(edge_nodes) * 2:
-                for edge_node in edge_nodes:
-                    if edge_node.place_mserv(mserv):
-                        return
-                raise Exception("没有足够的边缘节点来放置微服务")
+    # for mserv in mservs:
+    #     is_placed = False
+    #     fail_count = 0
+    #     while not is_placed:  # 循环直到遇到有边缘节点能放下
+    #         rand_node = random.randint(0, len(edge_nodes) - 1)
+    #         is_placed = edge_nodes[rand_node].place_mserv(mserv)
+    #         fail_count += 1
+    #         # 如果每个边缘节点都已经满了，防止死循环
+    #         if fail_count > len(edge_nodes) * 2:
+    #             for edge_node in edge_nodes:
+    #                 if edge_node.place_mserv(mserv):
+    #                     return
+    #             raise Exception("没有足够的边缘节点来放置微服务")
+    # 思路：一轮轮放置微服务，每次放置所有的微服务一个，若随机到的节点多次放不下，则遍历找到能放的点。如果全部都放不下或放完则踢出循环
+    avg_cost=CONSTANTS.MAX_DEPLOY_COST//len(mservs)
+    copy_mserv_list=deepcopy(mservs)
+    mserv_place_num_list=[0]*len(mservs)
+    while copy_mserv_list:
+        for mserv in copy_mserv_list:
+            is_placed = False
+            fail_count = 0
+            while not is_placed:
+                rand_node = random.randint(0, len(edge_nodes) - 1)
+                is_placed = edge_nodes[rand_node].place_mserv(mserv)
+                if is_placed:
+                    mserv_place_num_list[mserv.num]+=1
+                    break
+                fail_count += 1
+                if fail_count > len(edge_nodes):
+                    for edge_node in edge_nodes:
+                        if edge_node.place_mserv(mserv):
+                            mserv_place_num_list[mserv.num] += 1
+                            break
+                    else:
+                        copy_mserv_list.remove(mserv)
+                        break
 
 
 def random_task_routing(edge_nodes: list, mservs: list, users: list, channel: dict) -> None:
@@ -99,8 +124,10 @@ def baseline_mserv_place(edge_nodes: list, mservs: list, users: list, channel: d
             if node.place_mserv(mserv):
                 break
     # 再根据剩余cost裕度尽量多放
+    mserv_user_count = count_mserv_user(mservs, users)
     for mserv, mserv_freq in multiuser_mservs:
-        place_count = 2 - 1  # 根据频数决定放置数量
+        # ----------------------- 在这里修改减去的数量 -----------------------
+        place_count = mserv_user_count[mserv][0] - 1  # 根据频数决定放置数量
         # greedy放置
         for node in sorted_nodes:
             current_cost = sum(map(lambda x: sum(map(lambda y: y.place_cost, x.placed_mservs)), edge_nodes))

@@ -452,6 +452,8 @@ def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict, c
                     continue
                 # print(f"第{mserv_min_zeta[1]}个微服务在节点{mserv_min_zeta[3]}上被合并去掉")
                 # print(f"curren_deploy: {current_deploy}")
+                if len(flatten_list(current_deploy[mserv_min_zeta[1]]))<=1: # 确保微服务至少在一个节点上，防止批量合并后出现空列表导致问题不可解
+                    continue
                 current_deploy[mserv_min_zeta[1]][mserv_min_zeta[2]].remove(mserv_min_zeta[3])
                 skip_mservs.extend(get_adjacent_mservs(mserv_min_zeta[1], users)) # 将相邻微服务加入跳过列表
                 merged_mservs.append(mserv_min_zeta)
