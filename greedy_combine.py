@@ -257,6 +257,9 @@ def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict, c
         # 遍历寻找内存超限的节点，移出factor值较小的微服务
         for node_num, place_mservs in enumerate(pre_place_mservs_SeqInNodes):
             if sum(map(lambda x: mservs[x].memory_demand, place_mservs)) > edge_nodes[node_num].memory:
+                for mserv_num in place_mservs:
+                    if l_factor[node_num].get(mserv_num, -1) == -1:  # 如果该节点上的微服务实例没有对应的local factor，说明它是加进来的枢纽节点
+                        l_factor[node_num][mserv_num] = math.inf  # 将其factor值设为无穷大（即尽量让该微服务不要被移走），因为枢纽节点实例只有在枢纽节点上才有意义
                 mservNums_factorSorted = sorted(list(place_mservs),
                                                 key=lambda x: l_factor[node_num][x])  # 按factor值升序排列的微服务序号列表
                 targetNode_list = sorted(list(range(edgenode_count)), key=lambda x: channel[(node_num, x)],
