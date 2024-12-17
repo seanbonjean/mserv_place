@@ -127,13 +127,16 @@ def baseline_mserv_place(edge_nodes: list, mservs: list, users: list, channel: d
     mserv_user_count = count_mserv_user(mservs, users)
     for mserv, mserv_freq in multiuser_mservs:
         # ----------------------- 在这里修改减去的数量 -----------------------
-        place_count = mserv_user_count[mserv][0] - 1  # 根据频数决定放置数量
+        place_count = len(mserv_user_count[mserv.num])  - 1  # 根据频数决定放置数量
+        print(f"微服务{mserv.num}需要放置数量：{place_count}")
         # greedy放置
         for node in sorted_nodes:
             current_cost = sum(map(lambda x: sum(map(lambda y: y.place_cost, x.placed_mservs)), edge_nodes))
+            print(f"当前成本：{current_cost}, 需要成本：{mserv.place_cost}, 微服务{mserv.num}放置数量：{place_count}")
             if CONSTANTS.MAX_DEPLOY_COST - current_cost >= mserv.place_cost:
                 if node.place_mserv(mserv):
                     place_count -= 1
+                    print(f"放置微服务{mserv.num}在节点{node.num}")
                 if place_count == 0:
                     break
             else:
