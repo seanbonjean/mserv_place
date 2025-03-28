@@ -1,6 +1,6 @@
 class CONSTANTS:
-    MAX_MAKESPAN = 800  # 各任务的允许的最大完成时间(Th_max)
-    MAX_DEPLOY_COST = 10000  # 部署微服务的允许的最大成本(C_max)
+    MAX_MAKESPAN = 80  # 各任务的允许的最大完成时间(Th_max)
+    MAX_DEPLOY_COST = 9000  # 部署微服务的允许的最大成本(C_max)
 
 
 import xlrd as rd, xlwt as wt
@@ -39,7 +39,7 @@ def load_data(datapath: str) -> tuple:
     channelrate_dict = {}
     for i in range(sheet.nrows):
         for j in range(sheet.ncols):
-            channelrate_dict[(i, j)] = sheet.cell(i, j).value
+            channelrate_dict[(i, j)] = sheet.cell(i, j).value * 100
 
     sheet = data.sheet_by_name("channel_connect")
     channel_connectivity = {}

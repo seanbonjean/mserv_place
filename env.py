@@ -5,6 +5,8 @@ from strategy import *
 from gurobi_solver import gurobi_solve
 from benders_solver import benders_solve
 from greedy_combine import greedy_combine
+import greedy_combine_withdelta
+import greedy_combine_without_dependency_filter
 
 
 def random_algo(data_path: str) -> None:
@@ -42,4 +44,18 @@ def combine_algo(data_path: str) -> None:
     redirector.start()
     edgenode_list, microservice_list, user_list, channelrate_dict, channel_connectivity = load_data(data_path)
     greedy_combine(edgenode_list, microservice_list, user_list, channelrate_dict, channel_connectivity, 0.9)
+    redirector.stop()
+
+def combine_algo_with_delta(data_path: str) -> None:
+    redirector = RedirectStdoutToFileAndConsole("output/combine_withdelta.txt")
+    redirector.start()
+    edgenode_list, microservice_list, user_list, channelrate_dict, channel_connectivity = load_data(data_path)
+    greedy_combine_withdelta.greedy_combine(edgenode_list, microservice_list, user_list, channelrate_dict)
+    redirector.stop()
+
+def combine_algo_without_dependency_filter(data_path: str) -> None:
+    redirector = RedirectStdoutToFileAndConsole("output/combine_without_dependency_filter.txt")
+    redirector.start()
+    edgenode_list, microservice_list, user_list, channelrate_dict, channel_connectivity = load_data(data_path)
+    greedy_combine_without_dependency_filter.greedy_combine(edgenode_list, microservice_list, user_list, channelrate_dict, channel_connectivity, 0.9)
     redirector.stop()
