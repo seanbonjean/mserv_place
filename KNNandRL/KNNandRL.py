@@ -1,12 +1,15 @@
 import math
+from typing import Tuple
+
 import xlrd
 import networkx as nx
 import matplotlib.pyplot as plt
-from KNNandRL.QLearning import QLearningTable
+from QLearning import QLearningTable
 from itertools import combinations
-from KNNandRL.dijkstra import get_shortest_path, calculate_speed
+from dijkstra import get_shortest_path, calculate_speed
+from main import DATA_PATH
 
-NODE_NUM = 30
+NODE_NUM = 15
 ALL_CONNECTIONS_EDGE_NUM = NODE_NUM * (NODE_NUM - 1) // 2
 SCORE1_LAMBDA = 1  # 指标1平衡系数
 
@@ -18,7 +21,7 @@ CUT_EDGE_RATE = 0.7  # 在RL每轮episode删除边时，删除的边数/总边�
 ALPHA = 0.3
 
 
-def read_xls_to_map(file_path, sheet_index=0):
+def read_xls_to_map(file_path, sheet_index):
     """
     读取指定 .xls 文件，将单元格数据存入一个 map（dict）
     键： (row, col)
@@ -58,7 +61,7 @@ def knn_graph_from_map(distance_map, k=3, node_count=30):
     return G
 
 
-def count_islands(G: nx.Graph) -> int:
+def count_islands(G: nx.Graph) -> tuple[float, int, int]:
     """指标1：获取连通分量"""
     components = nx.connected_components(G)
     island_list = list(components)
@@ -66,8 +69,8 @@ def count_islands(G: nx.Graph) -> int:
     # 计算孤岛数量
     island_count = len(island_list)  # Ck
 
-    connScoreK = 1/island_count - \
-        SCORE1_LAMBDA * G.number_of_edges() / ALL_CONNECTIONS_EDGE_NUM
+    connScoreK = 1 / island_count - \
+                 SCORE1_LAMBDA * G.number_of_edges() / ALL_CONNECTIONS_EDGE_NUM
 
     return connScoreK, island_count, G.number_of_edges()
 
@@ -87,14 +90,14 @@ def distance_preservation_score(G: nx.Graph, v_map: dict):
         island_v = [v_map[(u, v)] for i in range(len(island_nodes)) for j in range(
             i + 1, len(island_nodes)) for u, v in [(island_nodes[i], island_nodes[j])]]
         # 取负后为了使用最短路径算法，全部加上一个正数以避免负权边
-        turn_graph_edges_to_positive = max(island_v)+1
+        turn_graph_edges_to_positive = max(island_v) + 1
         for i in range(len(island_nodes)):
             for j in range(i + 1, len(island_nodes)):
                 if not G.has_edge(island_nodes[i], island_nodes[j]):
                     # 如果孤岛内节点间没有边，则跳过
                     continue
                 u, v = island_nodes[i], island_nodes[j]
-                d = -v_map[(u, v)]+turn_graph_edges_to_positive
+                d = -v_map[(u, v)] + turn_graph_edges_to_positive
                 G_d.add_edge(u, v, weight=d)
         sumDk = 0
         for i in range(len(island_nodes)):
@@ -104,37 +107,37 @@ def distance_preservation_score(G: nx.Graph, v_map: dict):
                     G_d, source=u, target=v, weight='weight')
                 # 最短路径取负
                 dijk = sum(-v_map[(path[n], path[n + 1])]
-                           for n in range(len(path)-1))
+                           for n in range(len(path) - 1))
                 dOrig = -v_map[(u, v)]
                 sumDk += abs(dijk - dOrig) / dOrig
-        sumAvgDk = sumDk/(len(island_nodes)*(len(island_nodes)-1))
+        sumAvgDk = sumDk / (len(island_nodes) * (len(island_nodes) - 1))
         island_avg_list.append(sumAvgDk)
     # print("island_avg_list: ",island_avg_list)
-    overall_avgDk = sum(island_avg_list)/len(island_avg_list)
+    overall_avgDk = sum(island_avg_list) / len(island_avg_list)
     return overall_avgDk
 
 
-if __name__ == "__main__":
-    file_path = "./30nodes.xls"  # 你的文件路径
-    v_map = read_xls_to_map(file_path)
-    distance_map = {(i, j): 1/v_map[(i, j)] for i in range(NODE_NUM)
+def KNN_and_RL():
+    file_path = DATA_PATH  # 你的文件路径
+    v_map = read_xls_to_map(file_path, sheet_index=4)
+    distance_map = {(i, j): 1 / v_map[(i, j)] for i in range(NODE_NUM)
                     for j in range(NODE_NUM)}  # 这个 map 仅做速度的相反排序使用，速度越大其值越小，不是严格的距离
 
     scores = []
     resultStr = ""
     for k in range(1, 15):
-        resultStr += "k="+str(k)+"\n"
+        resultStr += "k=" + str(k) + "\n"
         graph = knn_graph_from_map(distance_map, k=k, node_count=NODE_NUM)
         score1 = count_islands(graph)
         score2 = distance_preservation_score(graph, v_map)
-        scores.append(SCORE1_WEIGHT*score1[0]+SCORE2_WEIGHT*score2)
+        scores.append(SCORE1_WEIGHT * score1[0] + SCORE2_WEIGHT * score2)
         print(f"k={k}: score1={score1}, score2={score2}, "
-              f"overall_score={scores[k-1]}")
+              f"overall_score={scores[k - 1]}")
         resultStr += f"score1={score1}, score2={score2}, " + \
-            f"overall_score={scores[k-1]}\n"
+                     f"overall_score={scores[k - 1]}\n"
     print(resultStr)
 
-    k = scores.index(max(scores))+1
+    k = scores.index(max(scores)) + 1
     print(f"Testing with k={k}")
     graph = knn_graph_from_map(distance_map, k=k, node_count=NODE_NUM)
     distance_preservation_score(graph, v_map)
