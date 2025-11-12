@@ -8,7 +8,12 @@ from functools import partial
 from joblib import Parallel, delayed
 import FuzzyAHP as fahp
 from values import CONSTANTS
-from placed_functions import *
+# from placed_functions import *
+from KNNandRL.placed_functions_with_KNNandRL import *
+
+KSI = 97
+ALLOW_RISE_BACK = -50
+
 
 def get_reliance_node(user_node: int, target_nodes: list, channel: dict) -> int:
     """
@@ -314,7 +319,7 @@ def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict, c
 
     mserv_user_count = count_mserv_user(mservs, users)  # 核对过，和mserv_req_nums是一样的
     mserv_receive_data_count = count_mserv_receive_dataflow(mservs, users)
-    ksi = 0.6
+    ksi = KSI
     upper_bound_dict = {key: value for key, value in enumerate(upper_bound)}
     partition_and_pre_deploy_info = place_mserv(upper_bound_dict, ksi, edge_nodes, mservs, users, channel, connect,
                                                 mserv_receive_data_count, mserv_user_count)
@@ -384,7 +389,7 @@ def greedy_combine(edge_nodes: list, mservs: list, users: list, channel: dict, c
     time_elapsed = 0.0
     allow_stop_flag = False
     break_flag = False
-    while max_delta[0] > -150 or not allow_stop_flag:  # 迭代停止条件：合并后，目标函数值没有变化，甚至反向变大
+    while max_delta[0] > ALLOW_RISE_BACK or not allow_stop_flag:  # 迭代停止条件：合并后，目标函数值没有变化，甚至反向变大
         loop_count += 1
         print()
         print(f"第{loop_count}轮合并")
