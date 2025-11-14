@@ -1,3 +1,4 @@
+import json
 from values import load_data
 from objects import *
 from collections import defaultdict
@@ -50,34 +51,7 @@ def place_mserv(upper_bound: dict, ksi: float, edge_nodes: list, mservs: list, u
         # 1. 找到“节点上有用户请求该微服务”的所有节点，根据一个通信速率阈值ξ，将大于ξ的链路相连，组成若干个节点群
         node_group = []  # 节点群列表，其中的元素也是列表，一个这样的列表为划分的一个节点群，列表中的元素为节点序号
         print(mserv_user_count[mserv.num])
-        mserv_exits_nodes = list(mserv_user_count[mserv.num].keys())
-        print(f"------ now mserv num:{mserv.num} ------")
-
-        def allocate_node_to_group(around_node: int, single_node_group: list):
-            i = 0
-            while i < len(mserv_exits_nodes):
-                if mserv_exits_nodes[i] == around_node:
-                    i += 1
-                    continue
-                unallocated_node = mserv_exits_nodes[i]
-                if channelrate_dict[(around_node, unallocated_node)] > ksi:
-                    single_node_group.append(unallocated_node)
-                    mserv_exits_nodes.pop(i)  # 删除当前节点
-                    single_node_group = allocate_node_to_group(unallocated_node, single_node_group)
-                else:
-                    i += 1  # 只有在不删除元素时才递增索引
-            if len(single_node_group) == 0:  # 即使递归结束后仍然没有一个元素与其通信阈值大于ksi，则自成一个节点群
-                single_node_group.append(around_node)
-                mserv_exits_nodes.remove(around_node)
-            return single_node_group
-
-        while len(mserv_exits_nodes) > 0:
-            # 只剩最后一个节点的情况，直接加入节点群
-            if len(mserv_exits_nodes) == 1:
-                node_group.append(mserv_exits_nodes)
-                break
-            single_node_group = allocate_node_to_group(mserv_exits_nodes[0], [])
-            node_group.append(single_node_group)
+        node_group = json.load("result.json")
         print("node group (节点群列表，其中单个元素为组成对应节点群的节点的列表): ", node_group)
         original_node_group = copy.deepcopy(node_group)
         # 2. 对每个节点，再向自身所处节点群中延伸一个与自身通信速率最快的节点，该节点上无需有用户请求该微服务

@@ -1,3 +1,4 @@
+import json
 import math
 from typing import Tuple
 
@@ -7,7 +8,8 @@ import matplotlib.pyplot as plt
 from QLearning import QLearningTable
 from itertools import combinations
 from dijkstra import get_shortest_path, calculate_speed
-from main import DATA_PATH
+
+DATA_PATH = "../data/15e_user400.xls"
 
 NODE_NUM = 15
 ALL_CONNECTIONS_EDGE_NUM = NODE_NUM * (NODE_NUM - 1) // 2
@@ -16,8 +18,8 @@ SCORE1_LAMBDA = 1  # 指标1平衡系数
 SCORE1_WEIGHT = 0.5  # 指标1对总分的权重
 SCORE2_WEIGHT = -0.005  # 指标2对总分的权重
 
-EPISODE_NUM = 100
-CUT_EDGE_RATE = 0.7  # 在RL每轮episode删除边时，删除的边数/总边数的比例
+EPISODE_NUM = 1000
+CUT_EDGE_RATE = 0.9  # 在RL每轮episode删除边时，删除的边数/总边数的比例
 ALPHA = 0.3
 
 
@@ -119,7 +121,7 @@ def distance_preservation_score(G: nx.Graph, v_map: dict):
 
 def KNN_and_RL():
     file_path = DATA_PATH  # 你的文件路径
-    v_map = read_xls_to_map(file_path, sheet_index=4)
+    v_map = read_xls_to_map(file_path, sheet_index=4)  # ! 这里直接读取了速度数据，没有x100
     distance_map = {(i, j): 1 / v_map[(i, j)] for i in range(NODE_NUM)
                     for j in range(NODE_NUM)}  # 这个 map 仅做速度的相反排序使用，速度越大其值越小，不是严格的距离
 
@@ -225,14 +227,14 @@ def KNN_and_RL():
         # 更新全局最优图
         if best_reward_in_this_episode > overall_best_reward:
             overall_best_reward = best_reward_in_this_episode
-            best_graph = best_graph_in_this_episode.copy()
+            overall_best_graph = best_graph_in_this_episode.copy()
         print(f"current overall best reward: {overall_best_reward}")
 
     # 画最终episode的best reward对应的拓扑图
     plt.figure(figsize=(8, 6))
-    pos = nx.spring_layout(best_graph, seed=42)
+    pos = nx.spring_layout(overall_best_graph, seed=42)
     nx.draw(
-        best_graph, pos,
+        overall_best_graph, pos,
         node_size=200,
         node_color="skyblue",
         with_labels=True,
@@ -249,3 +251,12 @@ def KNN_and_RL():
     plt.grid(True)
     plt.tight_layout()
     plt.show()
+    components = nx.connected_components(overall_best_graph)
+    node_group = [list(component) for component in components]
+    return node_group
+
+
+if __name__ == '__main__':
+    node_group = KNN_and_RL()
+    f = open("result.json", "w")
+    json.dump(node_group, f)
