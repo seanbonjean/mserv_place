@@ -1,12 +1,22 @@
 import json
 import math
+import os
 
+import matplotlib
 import xlrd
 import networkx as nx
-import matplotlib.pyplot as plt
 from QLearning import QLearningTable
 from itertools import combinations
 from dijkstra import get_shortest_path, calculate_speed
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SHOW_PLOTS = os.environ.get("KNN_QLEARNING_SHOW_PLOTS", "0") == "1"
+SAVE_PLOTS = os.environ.get("KNN_QLEARNING_SAVE_PLOTS", "1") == "1"
+
+if not SHOW_PLOTS:
+    matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt
 
 # 只用于读取速度矩阵
 DATA_PATH = "../data/15e_user400.xls"
@@ -20,6 +30,7 @@ SCORE1_WEIGHT = 0.5  # 指标1对总分的权重
 SCORE2_WEIGHT = -0.005  # 指标2对总分的权重
 
 EPISODE_NUM = 100
+Q_TABLE_ENTRY_PRINT_TIMES = 10
 CUT_EDGE_RATE = 0.7  # 在RL每轮episode删除边时，删除的边数/总边数的比例
 ALPHA = 0.3
 
@@ -62,6 +73,40 @@ def knn_graph_from_map(distance_map, k=3, node_count=30):
             G.add_edge(i, j, weight=d)
 
     return G
+
+
+def finish_plot(file_name=None):
+    if SAVE_PLOTS and file_name:
+        plt.savefig(os.path.join(BASE_DIR, file_name), dpi=200, bbox_inches="tight")
+    if SHOW_PLOTS:
+        plt.show()
+    else:
+        plt.close()
+
+
+def plot_graph(graph, title, file_name=None):
+    plt.figure(figsize=(8, 6))
+    pos = nx.spring_layout(graph, seed=42)
+    nx.draw(
+        graph, pos,
+        node_size=200,
+        node_color="skyblue",
+        with_labels=True,
+        edge_color="gray"
+    )
+    plt.title(title)
+    finish_plot(file_name)
+
+
+def plot_rewards(best_reward_each_episode):
+    plt.figure(figsize=(8, 5))
+    plt.plot(best_reward_each_episode, marker='o')
+    plt.xlabel("Episode")
+    plt.ylabel("Best Reward")
+    plt.title("Best Reward per Episode")
+    plt.grid(True)
+    plt.tight_layout()
+    finish_plot("q_learning_best_reward.png")
 
 
 def count_islands(G: nx.Graph) -> tuple[float, int, int]:
@@ -147,17 +192,7 @@ def KNN_and_RL():
     print("G.edges: ")
     print(graph.edges())
     # 画一个拓扑图
-    plt.figure(figsize=(8, 6))
-    pos = nx.spring_layout(graph, seed=42)
-    nx.draw(
-        graph, pos,
-        node_size=200,
-        node_color="skyblue",
-        with_labels=True,
-        edge_color="gray"
-    )
-    plt.title(f"KNN Graph (k={k}, nodes={NODE_NUM})")
-    plt.show()
+    plot_graph(graph, f"KNN Graph (k={k}, nodes={NODE_NUM})", "q_learning_knn_graph.png")
 
     # RL部分
     edges = list(graph.edges())
@@ -168,6 +203,11 @@ def KNN_and_RL():
     overall_best_reward = -math.inf
     overall_best_graph = None
     best_reward_each_episode = []
+    q_table_print_times = max(1, Q_TABLE_ENTRY_PRINT_TIMES)
+    q_table_print_episodes = {
+        max(1, round(EPISODE_NUM * i / q_table_print_times))
+        for i in range(1, q_table_print_times + 1)
+    }
 
     for episode in range(EPISODE_NUM):
         best_reward_in_this_episode = -math.inf
@@ -230,28 +270,13 @@ def KNN_and_RL():
             overall_best_reward = best_reward_in_this_episode
             overall_best_graph = best_graph_in_this_episode.copy()
         print(f"current overall best reward: {overall_best_reward}")
+        if episode + 1 in q_table_print_episodes:
+            print(f"episode {episode + 1}/{EPISODE_NUM}, Q-table entries: {len(RL.q_table)}")
 
     # 画最终episode的best reward对应的拓扑图
-    plt.figure(figsize=(8, 6))
-    pos = nx.spring_layout(overall_best_graph, seed=42)
-    nx.draw(
-        overall_best_graph, pos,
-        node_size=200,
-        node_color="skyblue",
-        with_labels=True,
-        edge_color="gray"
-    )
-    plt.title(f"KNN Graph (k={k}, nodes={NODE_NUM})")
-    plt.show()
+    plot_graph(overall_best_graph, f"KNN Graph (k={k}, nodes={NODE_NUM})", "q_learning_best_graph.png")
     # 画best reward随episode的变化趋势
-    plt.figure(figsize=(8, 5))
-    plt.plot(best_reward_each_episode, marker='o')
-    plt.xlabel("Episode")
-    plt.ylabel("Best Reward")
-    plt.title("Best Reward per Episode")
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
+    plot_rewards(best_reward_each_episode)
     components = nx.connected_components(overall_best_graph)
     node_group = [list(component) for component in components]
     return node_group
