@@ -20,7 +20,7 @@ SAVE_PLOTS = os.environ.get("KNN_DQN_SAVE_PLOTS", "1") == "1"
 if not SHOW_PLOTS:
     matplotlib.use("Agg")
 
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt  # noqa: E402
 
 # Only used to read the channel-rate matrix.
 DATA_PATH = os.path.join(BASE_DIR, "..", "data", "15e_user400.xls")
