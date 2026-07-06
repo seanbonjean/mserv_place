@@ -1,8 +1,10 @@
 import json
 import math
 import os
+import time
 
 import matplotlib
+import matplotlib.pyplot as plt
 import xlrd
 import networkx as nx
 from QLearning import QLearningTable
@@ -15,8 +17,6 @@ SAVE_PLOTS = os.environ.get("KNN_QLEARNING_SAVE_PLOTS", "1") == "1"
 
 if not SHOW_PLOTS:
     matplotlib.use("Agg")
-
-import matplotlib.pyplot as plt
 
 # 只用于读取速度矩阵
 DATA_PATH = "../data/15e_user400.xls"
@@ -166,6 +166,8 @@ def distance_preservation_score(G: nx.Graph, v_map: dict):
 
 
 def KNN_and_RL():
+    start_time = time.perf_counter()
+
     file_path = DATA_PATH  # 你的文件路径
     v_map = read_xls_to_map(file_path, sheet_index=SHEET_INDEX)  # ! 这里直接读取了速度数据，没有x100
     distance_map = {(i, j): 1 / v_map[(i, j)] for i in range(NODE_NUM)
@@ -249,7 +251,7 @@ def KNN_and_RL():
                 groups_avg_speed.append(sum_speed / len(pairs))
             # 先不带candidate node算
             mid_term = sum(groups_avg_speed) / group_num
-            reward = mid_term - ALPHA * mid_term ** 2 / min(groups_avg_speed) - 0.31  # ! 额外减
+            reward = mid_term - ALPHA * mid_term ** 2 / min(groups_avg_speed)
             print(str(reward), end="\t")
 
             # 学习
@@ -279,6 +281,9 @@ def KNN_and_RL():
     plot_rewards(best_reward_each_episode)
     components = nx.connected_components(overall_best_graph)
     node_group = [list(component) for component in components]
+
+    elapsed_time = time.perf_counter() - start_time
+    print(f"KNN + Q-Learning algorithm running time: {elapsed_time:.6f} seconds")
     return node_group
 
 

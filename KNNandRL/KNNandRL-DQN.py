@@ -1,6 +1,7 @@
 import json
 import math
 import os
+import time
 from itertools import combinations
 
 import matplotlib
@@ -339,6 +340,8 @@ def run_dqn_partition(graph, v_map):
 
 
 def KNN_and_DQN():
+    start_time = time.perf_counter()
+
     v_map = read_xls_to_map(DATA_PATH, sheet_index=SHEET_INDEX)
     distance_map = build_distance_map(v_map, NODE_NUM)
 
@@ -365,6 +368,9 @@ def KNN_and_DQN():
 
     components = nx.connected_components(overall_best_graph)
     node_group = [list(component) for component in components]
+
+    elapsed_time = time.perf_counter() - start_time
+    print(f"KNN + DQN algorithm running time: {elapsed_time:.6f} seconds")
     return node_group
 
 
