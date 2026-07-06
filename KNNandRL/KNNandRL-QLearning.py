@@ -234,6 +234,7 @@ def KNN_and_RL():
             # ! 如果没分出组，不仅reward为0，还更耗时计算，因此直接跳过
             if group_num == 1:
                 RL.learn(str(state), action, -0.5, str(next_state))  # ! 还多给了点惩罚
+                state = next_state
                 continue
             # groups_node_num = [len(group) for group in groups]  # 各组内节点数
             # 计算各组内平均速度
