@@ -4,7 +4,6 @@ import os
 import time
 
 import matplotlib
-import matplotlib.pyplot as plt
 import xlrd
 import networkx as nx
 from QLearning import QLearningTable
@@ -17,6 +16,8 @@ SAVE_PLOTS = os.environ.get("KNN_QLEARNING_SAVE_PLOTS", "1") == "1"
 
 if not SHOW_PLOTS:
     matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt  # noqa: E402
 
 # 只用于读取速度矩阵
 DATA_PATH = "../data/15e_user400.xls"
