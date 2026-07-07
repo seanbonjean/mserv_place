@@ -205,6 +205,8 @@ def KNN_and_RL():
 
     overall_best_reward = -math.inf
     overall_best_graph = None
+    overall_best_episode = None
+    overall_best_step = None
     best_reward_each_episode = []
     q_table_print_times = max(1, Q_TABLE_ENTRY_PRINT_TIMES)
     q_table_print_episodes = {
@@ -215,6 +217,7 @@ def KNN_and_RL():
     for episode in range(EPISODE_NUM):
         best_reward_in_this_episode = -math.inf
         best_graph_in_this_episode = None
+        best_step_in_this_episode = None
         state = base_state.copy()
         temp_graph = graph.copy()  # 用于计算reward的临时图
         for cut_edge_count in range(cut_edge_num):
@@ -263,6 +266,7 @@ def KNN_and_RL():
             if reward > best_reward_in_this_episode:
                 best_reward_in_this_episode = reward
                 best_graph_in_this_episode = temp_graph.copy()
+                best_step_in_this_episode = cut_edge_count + 1
         # 显示结果：该轮episode最好的reward
         print(f"\nbest reward: {best_reward_in_this_episode}")
         if best_reward_in_this_episode != -math.inf:
@@ -273,12 +277,23 @@ def KNN_and_RL():
         if best_reward_in_this_episode > overall_best_reward:
             overall_best_reward = best_reward_in_this_episode
             overall_best_graph = best_graph_in_this_episode.copy()
+            overall_best_episode = episode + 1
+            overall_best_step = best_step_in_this_episode
         print(f"current overall best reward: {overall_best_reward}")
         if episode + 1 in q_table_print_episodes:
             print(f"episode {episode + 1}/{EPISODE_NUM}, Q-table entries: {len(RL.q_table)}")
 
     # 画最终episode的best reward对应的拓扑图
-    plot_graph(overall_best_graph, f"KNN Graph (k={k}, nodes={NODE_NUM})", "q_learning_best_graph.png")
+    best_group_info = (
+        f"best episode={overall_best_episode}, step={overall_best_step}, "
+        f"reward={overall_best_reward:.6f}"
+    )
+    print(f"Best group info: {best_group_info}")
+    plot_graph(
+        overall_best_graph,
+        f"KNN Graph (k={k}, nodes={NODE_NUM})\n{best_group_info}",
+        "q_learning_best_graph.png",
+    )
     # 画best reward随episode的变化趋势
     plot_rewards(best_reward_each_episode)
     components = nx.connected_components(overall_best_graph)
