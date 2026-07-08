@@ -2,6 +2,7 @@ import json
 import math
 import os
 import time
+from datetime import datetime
 from itertools import combinations
 
 import matplotlib
@@ -14,6 +15,7 @@ from dijkstra import calculate_speed, get_shortest_path
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+OUTPUT_DIR = os.path.join(BASE_DIR, f"DQN-{datetime.now().strftime('%m%d-%H%M')}")
 SHOW_PLOTS = os.environ.get("KNN_DQN_SHOW_PLOTS", "0") == "1"
 SAVE_PLOTS = os.environ.get("KNN_DQN_SAVE_PLOTS", "1") == "1"
 SAVE_BEST_EPISODE = True
@@ -26,7 +28,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 # Only used to read the channel-rate matrix.
 DATA_PATH = os.path.join(BASE_DIR, "..", "data", "15e_user400.xls")
 SHEET_INDEX = 4
-RESULT_PATH = os.path.join(BASE_DIR, "result.json")
+RESULT_PATH = os.path.join(OUTPUT_DIR, "result.json")
 
 NODE_NUM = 15
 ALL_CONNECTIONS_EDGE_NUM = NODE_NUM * (NODE_NUM - 1) // 2
@@ -208,7 +210,9 @@ def calculate_partition_reward(temp_graph, v_map):
 
 def finish_plot(file_name=None, force_save=False, show_plot=True):
     if (SAVE_PLOTS or force_save) and file_name:
-        plt.savefig(os.path.join(BASE_DIR, file_name), dpi=200, bbox_inches="tight")
+        output_path = os.path.join(OUTPUT_DIR, file_name)
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        plt.savefig(output_path, dpi=200, bbox_inches="tight")
     if show_plot and SHOW_PLOTS:
         plt.show()
     else:
@@ -235,7 +239,7 @@ def save_best_episode_graphs(graphs, best_episode, best_step, title_prefix):
         return
 
     folder_name = f"best episode-{best_episode}"
-    os.makedirs(os.path.join(BASE_DIR, folder_name), exist_ok=True)
+    os.makedirs(os.path.join(OUTPUT_DIR, folder_name), exist_ok=True)
     for step, step_graph in enumerate(graphs, start=1):
         suffix = "-best" if step == best_step else ""
         plot_graph(
@@ -426,6 +430,7 @@ def KNN_and_DQN():
 
     elapsed_time = time.perf_counter() - start_time
     print(f"KNN + DQN algorithm running time: {elapsed_time:.6f} seconds")
+    print(f"Output directory: {OUTPUT_DIR}")
     return node_group
 
 
@@ -435,5 +440,6 @@ def KNN_and_RL():
 
 if __name__ == "__main__":
     node_group = KNN_and_DQN()
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
     with open(RESULT_PATH, "w", encoding="utf-8") as f:
         json.dump(node_group, f)

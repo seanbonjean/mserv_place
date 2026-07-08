@@ -2,6 +2,7 @@ import json
 import math
 import os
 import time
+from datetime import datetime
 
 import matplotlib
 import xlrd
@@ -11,6 +12,8 @@ from itertools import combinations
 from dijkstra import get_shortest_path, calculate_speed
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+OUTPUT_DIR = os.path.join(BASE_DIR, f"QLearn-{datetime.now().strftime('%m%d-%H%M')}")
+RESULT_PATH = os.path.join(OUTPUT_DIR, "result.json")
 SHOW_PLOTS = os.environ.get("KNN_QLEARNING_SHOW_PLOTS", "0") == "1"
 SAVE_PLOTS = os.environ.get("KNN_QLEARNING_SAVE_PLOTS", "1") == "1"
 SAVE_BEST_EPISODE = True
@@ -79,7 +82,9 @@ def knn_graph_from_map(distance_map, k=3, node_count=30):
 
 def finish_plot(file_name=None, force_save=False, show_plot=True):
     if (SAVE_PLOTS or force_save) and file_name:
-        plt.savefig(os.path.join(BASE_DIR, file_name), dpi=200, bbox_inches="tight")
+        output_path = os.path.join(OUTPUT_DIR, file_name)
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        plt.savefig(output_path, dpi=200, bbox_inches="tight")
     if show_plot and SHOW_PLOTS:
         plt.show()
     else:
@@ -105,7 +110,7 @@ def save_best_episode_graphs(graphs, best_episode, best_step, title_prefix):
         return
 
     folder_name = f"best episode-{best_episode}"
-    os.makedirs(os.path.join(BASE_DIR, folder_name), exist_ok=True)
+    os.makedirs(os.path.join(OUTPUT_DIR, folder_name), exist_ok=True)
     for step, step_graph in enumerate(graphs, start=1):
         suffix = "-best" if step == best_step else ""
         plot_graph(
@@ -329,10 +334,12 @@ def KNN_and_RL():
 
     elapsed_time = time.perf_counter() - start_time
     print(f"KNN + Q-Learning algorithm running time: {elapsed_time:.6f} seconds")
+    print(f"Output directory: {OUTPUT_DIR}")
     return node_group
 
 
 if __name__ == '__main__':
     node_group = KNN_and_RL()
-    f = open("result.json", "w")
-    json.dump(node_group, f)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    with open(RESULT_PATH, "w", encoding="utf-8") as f:
+        json.dump(node_group, f)
