@@ -4,6 +4,7 @@ from objects import *
 from collections import defaultdict
 import copy
 
+KNNandRL_data_path = "KNNandRL/result.json"
 
 # edge_nodes, mservs, users, channelrate_dict = load_data(data_path)
 
@@ -46,7 +47,7 @@ def place_mserv(upper_bound: dict, ksi: float, edge_nodes: list, mservs: list, u
     mservs_count = len(mservs)
     edge_nodes_count = len(edge_nodes)
 
-    f = open("KNNandRL/result.json", "r")
+    f = open(KNNandRL_data_path, "r")
     node_group_by_knn_rl = json.load(f)
 
     # 对于每个微服务
