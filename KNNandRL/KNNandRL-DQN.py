@@ -16,6 +16,7 @@ from dijkstra import calculate_speed, get_shortest_path
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SHOW_PLOTS = os.environ.get("KNN_DQN_SHOW_PLOTS", "0") == "1"
 SAVE_PLOTS = os.environ.get("KNN_DQN_SAVE_PLOTS", "1") == "1"
+SAVE_BEST_EPISODE = True
 
 if not SHOW_PLOTS:
     matplotlib.use("Agg")
@@ -205,16 +206,16 @@ def calculate_partition_reward(temp_graph, v_map):
     return reward, groups
 
 
-def finish_plot(file_name=None):
-    if SAVE_PLOTS and file_name:
+def finish_plot(file_name=None, force_save=False, show_plot=True):
+    if (SAVE_PLOTS or force_save) and file_name:
         plt.savefig(os.path.join(BASE_DIR, file_name), dpi=200, bbox_inches="tight")
-    if SHOW_PLOTS:
+    if show_plot and SHOW_PLOTS:
         plt.show()
     else:
         plt.close()
 
 
-def plot_graph(graph, title, file_name=None):
+def plot_graph(graph, title, file_name=None, force_save=False, show_plot=True):
     plt.figure(figsize=(8, 6))
     pos = nx.spring_layout(graph, seed=42)
     nx.draw(
@@ -226,7 +227,24 @@ def plot_graph(graph, title, file_name=None):
         edge_color="gray",
     )
     plt.title(title)
-    finish_plot(file_name)
+    finish_plot(file_name, force_save=force_save, show_plot=show_plot)
+
+
+def save_best_episode_graphs(graphs, best_episode, best_step, title_prefix):
+    if not SAVE_BEST_EPISODE or best_episode is None:
+        return
+
+    folder_name = f"best episode-{best_episode}"
+    os.makedirs(os.path.join(BASE_DIR, folder_name), exist_ok=True)
+    for step, step_graph in enumerate(graphs, start=1):
+        suffix = "-best" if step == best_step else ""
+        plot_graph(
+            step_graph,
+            f"{title_prefix}\nepisode={best_episode}, step={step}",
+            os.path.join(folder_name, f"step{step}{suffix}.png"),
+            force_save=True,
+            show_plot=False,
+        )
 
 
 def plot_rewards(best_reward_each_episode):
@@ -270,7 +288,7 @@ def choose_best_knn_graph(distance_map, v_map):
 def run_dqn_partition(graph, v_map):
     edges = list(graph.edges())
     if len(edges) == 0:
-        return graph.copy(), [], []
+        return graph.copy(), [], [], None, None, -math.inf, []
 
     rl = DQN(
         n_states=len(edges),
@@ -290,16 +308,21 @@ def run_dqn_partition(graph, v_map):
 
     overall_best_reward = -math.inf
     overall_best_graph = graph.copy()
+    overall_best_episode = None
+    overall_best_step = None
+    overall_best_episode_graphs = []
     best_reward_each_episode = []
     last_loss = None
 
     for episode in range(EPISODE_NUM):
         best_reward_in_this_episode = -math.inf
         best_graph_in_this_episode = graph.copy()
+        best_step_in_this_episode = None
+        episode_graphs = []
         state = base_state.copy()
         temp_graph = graph.copy()
 
-        for _ in range(cut_edge_num):
+        for cut_edge_count in range(cut_edge_num):
             available_actions = available_actions_from_state(state)
             if not available_actions:
                 break
@@ -312,6 +335,7 @@ def run_dqn_partition(graph, v_map):
             u, v = edges[action]
             if temp_graph.has_edge(u, v):
                 temp_graph.remove_edge(u, v)
+            episode_graphs.append(temp_graph.copy())
 
             reward, _ = calculate_partition_reward(temp_graph, v_map)
             print(str(reward), end="\t")
@@ -325,6 +349,7 @@ def run_dqn_partition(graph, v_map):
             if reward > best_reward_in_this_episode:
                 best_reward_in_this_episode = reward
                 best_graph_in_this_episode = temp_graph.copy()
+                best_step_in_this_episode = cut_edge_count + 1
 
         print(f"\nbest reward: {best_reward_in_this_episode}")
         if last_loss is not None:
@@ -334,9 +359,20 @@ def run_dqn_partition(graph, v_map):
         if best_reward_in_this_episode > overall_best_reward:
             overall_best_reward = best_reward_in_this_episode
             overall_best_graph = best_graph_in_this_episode.copy()
+            overall_best_episode = episode + 1
+            overall_best_step = best_step_in_this_episode
+            overall_best_episode_graphs = [step_graph.copy() for step_graph in episode_graphs]
         print(f"current overall best reward: {overall_best_reward}")
 
-    return overall_best_graph, best_reward_each_episode, edges
+    return (
+        overall_best_graph,
+        best_reward_each_episode,
+        edges,
+        overall_best_episode,
+        overall_best_step,
+        overall_best_reward,
+        overall_best_episode_graphs,
+    )
 
 
 def KNN_and_DQN():
@@ -357,12 +393,31 @@ def KNN_and_DQN():
         "dqn_initial_knn_graph.png",
     )
 
-    overall_best_graph, best_reward_each_episode, _ = run_dqn_partition(graph, v_map)
+    (
+        overall_best_graph,
+        best_reward_each_episode,
+        _,
+        overall_best_episode,
+        overall_best_step,
+        overall_best_reward,
+        overall_best_episode_graphs,
+    ) = run_dqn_partition(graph, v_map)
 
+    best_group_info = (
+        f"best episode={overall_best_episode}, step={overall_best_step}, "
+        f"reward={overall_best_reward:.6f}"
+    )
+    print(f"Best group info: {best_group_info}")
     plot_graph(
         overall_best_graph,
-        f"KNN-DQN Graph (k={k}, nodes={NODE_NUM})",
+        f"KNN-DQN Graph (k={k}, nodes={NODE_NUM})\n{best_group_info}",
         "dqn_best_graph.png",
+    )
+    save_best_episode_graphs(
+        overall_best_episode_graphs,
+        overall_best_episode,
+        overall_best_step,
+        f"KNN-DQN Graph (k={k}, nodes={NODE_NUM})",
     )
     plot_rewards(best_reward_each_episode)
 

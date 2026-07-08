@@ -13,6 +13,7 @@ from dijkstra import get_shortest_path, calculate_speed
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SHOW_PLOTS = os.environ.get("KNN_QLEARNING_SHOW_PLOTS", "0") == "1"
 SAVE_PLOTS = os.environ.get("KNN_QLEARNING_SAVE_PLOTS", "1") == "1"
+SAVE_BEST_EPISODE = True
 
 if not SHOW_PLOTS:
     matplotlib.use("Agg")
@@ -76,16 +77,16 @@ def knn_graph_from_map(distance_map, k=3, node_count=30):
     return G
 
 
-def finish_plot(file_name=None):
-    if SAVE_PLOTS and file_name:
+def finish_plot(file_name=None, force_save=False, show_plot=True):
+    if (SAVE_PLOTS or force_save) and file_name:
         plt.savefig(os.path.join(BASE_DIR, file_name), dpi=200, bbox_inches="tight")
-    if SHOW_PLOTS:
+    if show_plot and SHOW_PLOTS:
         plt.show()
     else:
         plt.close()
 
 
-def plot_graph(graph, title, file_name=None):
+def plot_graph(graph, title, file_name=None, force_save=False, show_plot=True):
     plt.figure(figsize=(8, 6))
     pos = nx.spring_layout(graph, seed=42)
     nx.draw(
@@ -96,7 +97,24 @@ def plot_graph(graph, title, file_name=None):
         edge_color="gray"
     )
     plt.title(title)
-    finish_plot(file_name)
+    finish_plot(file_name, force_save=force_save, show_plot=show_plot)
+
+
+def save_best_episode_graphs(graphs, best_episode, best_step, title_prefix):
+    if not SAVE_BEST_EPISODE or best_episode is None:
+        return
+
+    folder_name = f"best episode-{best_episode}"
+    os.makedirs(os.path.join(BASE_DIR, folder_name), exist_ok=True)
+    for step, step_graph in enumerate(graphs, start=1):
+        suffix = "-best" if step == best_step else ""
+        plot_graph(
+            step_graph,
+            f"{title_prefix}\nepisode={best_episode}, step={step}",
+            os.path.join(folder_name, f"step{step}{suffix}.png"),
+            force_save=True,
+            show_plot=False,
+        )
 
 
 def plot_rewards(best_reward_each_episode):
@@ -207,6 +225,7 @@ def KNN_and_RL():
     overall_best_graph = None
     overall_best_episode = None
     overall_best_step = None
+    overall_best_episode_graphs = []
     best_reward_each_episode = []
     q_table_print_times = max(1, Q_TABLE_ENTRY_PRINT_TIMES)
     q_table_print_episodes = {
@@ -218,6 +237,7 @@ def KNN_and_RL():
         best_reward_in_this_episode = -math.inf
         best_graph_in_this_episode = None
         best_step_in_this_episode = None
+        episode_graphs = []
         state = base_state.copy()
         temp_graph = graph.copy()  # 用于计算reward的临时图
         for cut_edge_count in range(cut_edge_num):
@@ -232,6 +252,7 @@ def KNN_and_RL():
             u, v = edges[action]
             if temp_graph.has_edge(u, v):
                 temp_graph.remove_edge(u, v)
+            episode_graphs.append(temp_graph.copy())
             groups = list(nx.connected_components(temp_graph))
             group_num = len(groups)  # 组数（连通分量的个数）
 
@@ -279,6 +300,7 @@ def KNN_and_RL():
             overall_best_graph = best_graph_in_this_episode.copy()
             overall_best_episode = episode + 1
             overall_best_step = best_step_in_this_episode
+            overall_best_episode_graphs = [step_graph.copy() for step_graph in episode_graphs]
         print(f"current overall best reward: {overall_best_reward}")
         if episode + 1 in q_table_print_episodes:
             print(f"episode {episode + 1}/{EPISODE_NUM}, Q-table entries: {len(RL.q_table)}")
@@ -293,6 +315,12 @@ def KNN_and_RL():
         overall_best_graph,
         f"KNN Graph (k={k}, nodes={NODE_NUM})\n{best_group_info}",
         "q_learning_best_graph.png",
+    )
+    save_best_episode_graphs(
+        overall_best_episode_graphs,
+        overall_best_episode,
+        overall_best_step,
+        f"KNN Q-Learning Graph (k={k}, nodes={NODE_NUM})",
     )
     # 画best reward随episode的变化趋势
     plot_rewards(best_reward_each_episode)
