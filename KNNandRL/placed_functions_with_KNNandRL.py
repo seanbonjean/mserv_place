@@ -46,12 +46,20 @@ def place_mserv(upper_bound: dict, ksi: float, edge_nodes: list, mservs: list, u
     mservs_count = len(mservs)
     edge_nodes_count = len(edge_nodes)
 
+    f = open("KNNandRL/result.json", "r")
+    node_group_by_knn_rl = json.load(f)
+
     # 对于每个微服务
     for mserv in mservs:
         # 1. 找到“节点上有用户请求该微服务”的所有节点，根据一个通信速率阈值ξ，将大于ξ的链路相连，组成若干个节点群
-        node_group = []  # 节点群列表，其中的元素也是列表，一个这样的列表为划分的一个节点群，列表中的元素为节点序号
+        # node_group = []  # 节点群列表，其中的元素也是列表，一个这样的列表为划分的一个节点群，列表中的元素为节点序号
         print(mserv_user_count[mserv.num])
-        node_group = json.load("result.json")
+        mserv_exits_nodes = list(mserv_user_count[mserv.num].keys())
+        node_group = [l.copy() for l in node_group_by_knn_rl]
+        for group in node_group:
+            for node in group:
+                if node not in mserv_exits_nodes:
+                    group.remove(node)
         print("node group (节点群列表，其中单个元素为组成对应节点群的节点的列表): ", node_group)
         original_node_group = copy.deepcopy(node_group)
         # 2. 对每个节点，再向自身所处节点群中延伸一个与自身通信速率最快的节点，该节点上无需有用户请求该微服务
@@ -114,7 +122,8 @@ def place_mserv(upper_bound: dict, ksi: float, edge_nodes: list, mservs: list, u
                     hub_node_tran_time = sum([mserv_receive_data_count[mserv.num][other_node] / channelrate_dict[
                         (connected_node_index, other_node)] for other_node in single_node_group])
                     # 连通节点排序，按连通节点权值排序
-                    connectivity_node_list = sorted(connectivity_node_list, key=lambda x: list(connected_weight_order_map.keys()).index(x))
+                    connectivity_node_list = sorted(connectivity_node_list,
+                                                    key=lambda x: list(connected_weight_order_map.keys()).index(x))
                     for other_node in connectivity_node_list:
                         delta = hub_node_tran_time - sum([mserv_receive_data_count[mserv.num][group_node] /
                                                           channelrate_dict[(group_node, other_node)] for group_node in
@@ -216,7 +225,7 @@ if __name__ == '__main__':
     print("mserv_user_count (微服务用户数统计。二维字典，第一维是微服务种类序号，第二维是以边缘节点序号): ", {k: (
         dict(v) if isinstance(v, defaultdict) else {kk: (dict(vv) if isinstance(vv, defaultdict) else vv) for kk, vv in
                                                     v.items()} if isinstance(v, dict) else v) for k, v in
-                                                                                                           mserv_user_count.items()})
+        mserv_user_count.items()})
     mserv_receive_data_count = count_mserv_receive_dataflow(mservs, users)
     print("mserv_receive_data_count (微服务数据接收量统计。二维字典，第一维是微服务种类序号，第二维是以边缘节点序号): ", {
         k: (dict(v) if isinstance(v, defaultdict) else {kk: (dict(vv) if isinstance(vv, defaultdict) else vv) for kk, vv
