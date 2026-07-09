@@ -33,6 +33,8 @@ SCORE1_LAMBDA = 1  # 指标1平衡系数
 
 SCORE1_WEIGHT = 0.5  # 指标1对总分的权重
 SCORE2_WEIGHT = -0.005  # 指标2对总分的权重
+KNN_MIN_C = 1.0
+KNN_EARLY_STOP_DECLINES = 3
 
 EPISODE_NUM = 100
 Q_TABLE_ENTRY_PRINT_TIMES = 10
@@ -198,20 +200,47 @@ def KNN_and_RL():
                     for j in range(NODE_NUM)}  # 这个 map 仅做速度的相反排序使用，速度越大其值越小，不是严格的距离
 
     scores = []
+    min_k = max(1, math.ceil(KNN_MIN_C * math.log(NODE_NUM)))
+    max_k = NODE_NUM - 1
+    k_values = list(range(min_k, max_k + 1))
+    evaluated_k_values = []
     resultStr = ""
-    for k in range(1, 15):
+    if not k_values:
+        raise ValueError(
+            f"No valid KNN k value for NODE_NUM={NODE_NUM}, "
+            f"KNN_MIN_C={KNN_MIN_C}."
+        )
+
+    print(
+        f"KNN search k range: {min_k}..{max_k} "
+        f"(k_min=ceil({KNN_MIN_C} * log({NODE_NUM})))"
+    )
+    for k in k_values:
         resultStr += "k=" + str(k) + "\n"
         graph = knn_graph_from_map(distance_map, k=k, node_count=NODE_NUM)
         score1 = count_islands(graph)
         score2 = distance_preservation_score(graph, v_map)
-        scores.append(SCORE1_WEIGHT * score1[0] + SCORE2_WEIGHT * score2)
+        overall_score = SCORE1_WEIGHT * score1[0] + SCORE2_WEIGHT * score2
+        scores.append(overall_score)
+        evaluated_k_values.append(k)
         print(f"k={k}: score1={score1}, score2={score2}, "
-              f"overall_score={scores[k - 1]}")
+              f"overall_score={overall_score}")
         resultStr += f"score1={score1}, score2={score2}, " + \
-                     f"overall_score={scores[k - 1]}\n"
+                     f"overall_score={overall_score}\n"
+        if len(scores) > KNN_EARLY_STOP_DECLINES:
+            recent_scores = scores[-(KNN_EARLY_STOP_DECLINES + 1):]
+            if all(
+                recent_scores[i] > recent_scores[i + 1]
+                for i in range(KNN_EARLY_STOP_DECLINES)
+            ):
+                print(
+                    f"KNN early stopped at k={k} after "
+                    f"{KNN_EARLY_STOP_DECLINES} consecutive score declines."
+                )
+                break
     print(resultStr)
 
-    k = scores.index(max(scores)) + 1
+    k = evaluated_k_values[scores.index(max(scores))]
     print(f"Testing with k={k}")
     graph = knn_graph_from_map(distance_map, k=k, node_count=NODE_NUM)
     distance_preservation_score(graph, v_map)

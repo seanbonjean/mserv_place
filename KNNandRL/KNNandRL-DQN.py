@@ -36,6 +36,8 @@ SCORE1_LAMBDA = 1
 
 SCORE1_WEIGHT = 0.5
 SCORE2_WEIGHT = -0.005
+KNN_MIN_C = 1.0
+KNN_EARLY_STOP_DECLINES = 3
 
 EPISODE_NUM = 100
 CUT_EDGE_RATE = 0.7
@@ -264,9 +266,21 @@ def plot_rewards(best_reward_each_episode):
 
 def choose_best_knn_graph(distance_map, v_map):
     scores = []
-    k_values = list(range(1, NODE_NUM))
+    min_k = max(1, math.ceil(KNN_MIN_C * math.log(NODE_NUM)))
+    max_k = NODE_NUM - 1
+    k_values = list(range(min_k, max_k + 1))
+    evaluated_k_values = []
     result_str = ""
+    if not k_values:
+        raise ValueError(
+            f"No valid KNN k value for NODE_NUM={NODE_NUM}, "
+            f"KNN_MIN_C={KNN_MIN_C}."
+        )
 
+    print(
+        f"KNN search k range: {min_k}..{max_k} "
+        f"(k_min=ceil({KNN_MIN_C} * log({NODE_NUM})))"
+    )
     for k in k_values:
         result_str += "k=" + str(k) + "\n"
         graph = knn_graph_from_map(distance_map, k=k, node_count=NODE_NUM)
@@ -274,6 +288,7 @@ def choose_best_knn_graph(distance_map, v_map):
         score2 = distance_preservation_score(graph, v_map)
         overall_score = SCORE1_WEIGHT * score1[0] + SCORE2_WEIGHT * score2
         scores.append(overall_score)
+        evaluated_k_values.append(k)
         print(
             f"k={k}: score1={score1}, score2={score2}, "
             f"overall_score={overall_score}"
@@ -282,9 +297,20 @@ def choose_best_knn_graph(distance_map, v_map):
             f"score1={score1}, score2={score2}, "
             f"overall_score={overall_score}\n"
         )
+        if len(scores) > KNN_EARLY_STOP_DECLINES:
+            recent_scores = scores[-(KNN_EARLY_STOP_DECLINES + 1):]
+            if all(
+                recent_scores[i] > recent_scores[i + 1]
+                for i in range(KNN_EARLY_STOP_DECLINES)
+            ):
+                print(
+                    f"KNN early stopped at k={k} after "
+                    f"{KNN_EARLY_STOP_DECLINES} consecutive score declines."
+                )
+                break
 
     print(result_str)
-    best_k = k_values[int(np.argmax(scores))]
+    best_k = evaluated_k_values[int(np.argmax(scores))]
     graph = knn_graph_from_map(distance_map, k=best_k, node_count=NODE_NUM)
     return best_k, graph
 
