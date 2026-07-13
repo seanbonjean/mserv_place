@@ -274,13 +274,24 @@ def KNN_and_RL():
         episode_graphs = []
         state = base_state.copy()
         temp_graph = graph.copy()  # 用于计算reward的临时图
+        remaining_actions = list(range(len(edges)))
         for cut_edge_count in range(cut_edge_num):
-            action = RL.choose_action(str(state))
+            if not remaining_actions:
+                break
+            action = RL.choose_action(
+                str(state), available_actions=remaining_actions
+            )
+            remaining_actions.remove(action)
 
             # 获取next_state
             next_state = state.copy()
             # 执行动作（删除边）
             next_state[action] = 0
+            done = (
+                cut_edge_count + 1 >= cut_edge_num
+                or not remaining_actions
+            )
+            next_observation = 'terminal' if done else str(next_state)
 
             # 计算reward
             u, v = edges[action]
@@ -292,7 +303,13 @@ def KNN_and_RL():
 
             # ! 如果没分出组，不仅reward为0，还更耗时计算，因此直接跳过
             if group_num == 1:
-                RL.learn(str(state), action, -0.5, str(next_state))  # ! 还多给了点惩罚
+                RL.learn(
+                    str(state),
+                    action,
+                    -0.5,
+                    next_observation,
+                    next_available_actions=remaining_actions,
+                )
                 state = next_state
                 continue
             # groups_node_num = [len(group) for group in groups]  # 各组内节点数
@@ -315,7 +332,13 @@ def KNN_and_RL():
             print(str(reward), end="\t")
 
             # 学习
-            RL.learn(str(state), action, reward, str(next_state))
+            RL.learn(
+                str(state),
+                action,
+                reward,
+                next_observation,
+                next_available_actions=remaining_actions,
+            )
             state = next_state
             # 更新本episode最优图
             if reward > best_reward_in_this_episode:

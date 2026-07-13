@@ -67,7 +67,7 @@ class DQN(object):
 
         self.learn_step_counter = 0
         self.memory_counter = 0
-        self.memory = np.zeros((memory_capacity, n_states * 2 + 2), dtype=np.float32)
+        self.memory = np.zeros((memory_capacity, n_states * 2 + 3), dtype=np.float32)
         self.optimizer = torch.optim.Adam(self.eval_net.parameters(), lr=learning_rate)
         self.loss_func = nn.MSELoss()
 
@@ -99,8 +99,8 @@ class DQN(object):
                 action = int(np.random.choice(available_actions))
         return action
 
-    def store_transition(self, s, a, r, s_):
-        transition = np.hstack((s, [a, r], s_)).astype(np.float32)
+    def store_transition(self, s, a, r, s_, done=False):
+        transition = np.hstack((s, [a, r], s_, [float(done)])).astype(np.float32)
         index = self.memory_counter % self.memory_capacity
         self.memory[index, :] = transition
         self.memory_counter += 1
@@ -124,7 +124,11 @@ class DQN(object):
         b_r = torch.FloatTensor(
             b_memory[:, self.n_states + 1:self.n_states + 2]
         ).to(self.device)
-        b_s_ = torch.FloatTensor(b_memory[:, -self.n_states:]).to(self.device)
+        next_state_start = self.n_states + 2
+        b_s_ = torch.FloatTensor(
+            b_memory[:, next_state_start:next_state_start + self.n_states]
+        ).to(self.device)
+        b_done = torch.FloatTensor(b_memory[:, -1:]).to(self.device)
 
         q_eval = self.eval_net(b_s).gather(1, b_a)
         q_next = self.target_net(b_s_).detach()
@@ -139,7 +143,9 @@ class DQN(object):
             )
         else:
             q_next_max = q_next.max(1)[0]
-        q_target = b_r + self.gamma * q_next_max.view(self.batch_size, 1)
+        q_target = b_r + self.gamma * (1 - b_done) * q_next_max.view(
+            self.batch_size, 1
+        )
 
         loss = self.loss_func(q_eval, q_target)
         self.optimizer.zero_grad()
@@ -196,7 +202,7 @@ def _run_cartpole_demo():
                 - 0.5
             )
             r = r1 + r2
-            dqn.store_transition(s, a, r, s_)
+            dqn.store_transition(s, a, r, s_, done=done)
             ep_r += r
             loss = dqn.learn()
             if done:

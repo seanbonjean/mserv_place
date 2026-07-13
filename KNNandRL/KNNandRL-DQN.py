@@ -370,7 +370,13 @@ def run_dqn_partition(graph, v_map):
             reward, _ = calculate_partition_reward(temp_graph, v_map)
             print(str(reward), end="\t")
 
-            rl.store_transition(state, action, reward, next_state)
+            done = (
+                cut_edge_count + 1 >= cut_edge_num
+                or len(available_actions) == 1
+            )
+            rl.store_transition(
+                state, action, reward, next_state, done=done
+            )
             loss = rl.learn()
             if loss is not None:
                 last_loss = loss
