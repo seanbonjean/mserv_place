@@ -3,6 +3,8 @@
 # 具体部署节点和用户路由仍由 Gurobi 在原成本、时延及内存约束下统一优化。
 # 特别说明：本程序没有引入 candidate/hub 节点，也不执行 candidate-node election；
 # 每个微服务的候选部署节点仅来自其请求节点与 RL 分组的交集 G'(m_i)。
+# Gurobi 直接求解最终部署，因此不要求每个活跃组至少保留一个实例；分组 quota
+# 仅作为实例数量上界，每个有请求的微服务只需在所有组中全局至少部署一个实例。
 
 import argparse
 import json
@@ -22,8 +24,8 @@ if PROJECT_ROOT not in sys.path:
 from values import CONSTANTS, load_data  # noqa: E402
 
 
-DEFAULT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "15e_user400.xls")
-DEFAULT_GROUP_PATH = os.path.join(BASE_DIR, "DQN-0713-2159", "result.json")
+DEFAULT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "30e_15m_50u.xls")
+DEFAULT_GROUP_PATH = os.path.join(BASE_DIR, "SA-0713-1529", "result.json")
 
 
 def load_and_validate_groups(group_path: str, node_ids: set[int]) -> list[list[int]]:
@@ -121,8 +123,8 @@ def allocate_group_quotas(
     """
     按组请求比例将微服务总 upper bound 整数化分配到各活跃组。
 
-    每个活跃组至少保留一个实例名额，quota 不超过组内 G'(m_i) 节点数，
-    所有组 quota 之和等于该微服务的总 upper bound。
+    quota 只作为 group upper bound，可以为 0，不构成任何组下界。quota 不超过
+    组内 G'(m_i) 节点数，所有组 quota 之和等于该微服务的总 upper bound。
     """
     group_count = len(service_groups)
     if group_count == 0:
@@ -136,12 +138,6 @@ def allocate_group_quotas(
     capacities = [len(group_info["nodes"]) for group_info in service_groups]
     demands = [group_info["request_count"] for group_info in service_groups]
 
-    if total_upper_bound < group_count:
-        raise ValueError(
-            f"Microservice {service_id}: paper upper bound {total_upper_bound} is "
-            f"smaller than its {group_count} active RL groups, so the requirement "
-            "of at least one instance per active group cannot be satisfied."
-        )
     if total_upper_bound > sum(capacities):
         raise ValueError(
             f"Microservice {service_id}: upper bound {total_upper_bound} exceeds "
@@ -158,8 +154,8 @@ def allocate_group_quotas(
         total_upper_bound * demand / total_demand
         for demand in demands
     ]
-    quotas = [1] * group_count
-    remaining = total_upper_bound - group_count
+    quotas = [0] * group_count
+    remaining = total_upper_bound
 
     while remaining > 0:
         candidates = [
@@ -334,25 +330,6 @@ def gurobi_evaluate_rl_groups(
     print(f"Global RL groups: {global_groups}")
     print_partition_summary(partition_info)
 
-    minimum_grouped_instances = sum(
-        len(info["groups"])
-        for info in partition_info.values()
-    )
-    minimum_grouped_deploy_cost = sum(
-        len(partition_info[mserv.num]["groups"]) * mserv.place_cost
-        for mserv in mservs
-    )
-    print(f"\nMinimum instances required by active-group coverage = {minimum_grouped_instances}")
-    print(
-        "Minimum deployment cost required by active-group coverage = "
-        f"{minimum_grouped_deploy_cost}"
-    )
-    if minimum_grouped_deploy_cost > max_deploy_cost:
-        print(
-            "WARNING: the minimum grouped deployment cost already exceeds "
-            "MAX_DEPLOY_COST; the grouped Gurobi model will be infeasible."
-        )
-
     candidate_nodes = {
         service_id: info["request_nodes"]
         for service_id, info in partition_info.items()
@@ -399,8 +376,8 @@ def gurobi_evaluate_rl_groups(
                 name=f"assign_{user.num}_{service_id}",
             )
 
-    # RL 分组用于限制部署变量：每个活跃组至少部署一个实例，且不超过按请求比例
-    # 分配到该组的 quota；各组 quota 总和为论文 upper bound。
+    # RL 分组只提供部署数量上界：每组最多部署 quota 个实例，但允许部署 0 个；
+    # 各组 quota 总和为论文 upper bound。最终部署只保留微服务全局下界 1。
     for service_id, info in partition_info.items():
         if not info["groups"]:
             continue
@@ -411,20 +388,20 @@ def gurobi_evaluate_rl_groups(
                 for node_num in group_info["nodes"]
             )
             model.addConstr(
-                group_instance_count >= 1,
-                name=f"group_min_{service_id}_{group_index}",
-            )
-            model.addConstr(
                 group_instance_count <= group_info["quota"],
                 name=f"group_max_{service_id}_{group_index}",
             )
 
+        service_instance_count = quicksum(
+            x[(service_id, node_num)]
+            for node_num in candidate_nodes[service_id]
+        )
         model.addConstr(
-            quicksum(
-                x[(service_id, node_num)]
-                for node_num in candidate_nodes[service_id]
-            )
-            <= info["upper_bound"],
+            service_instance_count >= 1,
+            name=f"service_min_{service_id}",
+        )
+        model.addConstr(
+            service_instance_count <= info["upper_bound"],
             name=f"service_upper_bound_{service_id}",
         )
 
@@ -541,8 +518,6 @@ def gurobi_evaluate_rl_groups(
         "solution_count": model.SolCount,
         "max_deploy_cost": max_deploy_cost,
         "max_makespan": max_makespan,
-        "minimum_grouped_instances": minimum_grouped_instances,
-        "minimum_grouped_deploy_cost": minimum_grouped_deploy_cost,
     }
 
     if model.SolCount == 0:
