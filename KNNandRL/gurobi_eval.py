@@ -28,6 +28,69 @@ DEFAULT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "30e_15m_50u.xls")
 DEFAULT_GROUP_PATH = os.path.join(BASE_DIR, "SA-0713-1529", "result.json")
 
 
+class _TeeStream:
+    """将一个输出流同时写入终端和 UTF-8 日志文件。"""
+
+    def __init__(self, terminal_stream, log_file):
+        self.terminal_stream = terminal_stream
+        self.log_file = log_file
+
+    def write(self, message: str) -> int:
+        self.terminal_stream.write(message)
+        self.log_file.write(message)
+        self.flush()
+        return len(message)
+
+    def flush(self) -> None:
+        self.terminal_stream.flush()
+        self.log_file.flush()
+
+
+class _TeeOutput:
+    """在保持终端输出的同时，将 stdout/stderr 同步保存到同一个文件。"""
+
+    def __init__(self, log_path: str):
+        self.log_path = log_path
+        self.log_file = None
+        self.original_stdout = None
+        self.original_stderr = None
+
+    def start(self) -> None:
+        log_dir = os.path.dirname(self.log_path)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+        self.log_file = open(self.log_path, "w", encoding="utf-8")
+        self.original_stdout = sys.stdout
+        self.original_stderr = sys.stderr
+        sys.stdout = _TeeStream(self.original_stdout, self.log_file)
+        sys.stderr = _TeeStream(self.original_stderr, self.log_file)
+
+    def stop(self) -> None:
+        if self.log_file is None:
+            return
+        try:
+            sys.stdout.flush()
+            sys.stderr.flush()
+        finally:
+            sys.stdout = self.original_stdout
+            sys.stderr = self.original_stderr
+            self.log_file.close()
+            self.log_file = None
+
+
+def default_log_path(group_path: str) -> str:
+    """在 KNNandRL 目录按 result.json 父目录生成 <父目录名>-gurobi_eval.txt。"""
+    group_path = os.path.abspath(group_path)
+    group_dir = os.path.dirname(group_path)
+    group_parent_name = os.path.basename(os.path.normpath(group_dir))
+    if not group_parent_name:
+        group_parent_name = "result"
+    return os.path.join(
+        BASE_DIR,
+        f"{group_parent_name}-gurobi_eval.txt",
+    )
+
+
 def load_and_validate_groups(group_path: str, node_ids: set[int]) -> list[list[int]]:
     """读取全局 RL 分组，并确认其恰好构成全部边缘节点的一个划分。"""
     with open(group_path, "r", encoding="utf-8") as file:
@@ -612,9 +675,16 @@ def parse_args() -> argparse.Namespace:
 
 if __name__ == "__main__":
     arguments = parse_args()
-    gurobi_evaluate_rl_groups(
-        data_path=arguments.data,
-        group_path=arguments.groups,
-        time_limit=arguments.time_limit,
-        model_output_path=arguments.model_output,
-    )
+    log_path = default_log_path(arguments.groups)
+    output = _TeeOutput(log_path)
+    output.start()
+    try:
+        print(f"Output log path: {log_path}")
+        gurobi_evaluate_rl_groups(
+            data_path=arguments.data,
+            group_path=arguments.groups,
+            time_limit=arguments.time_limit,
+            model_output_path=arguments.model_output,
+        )
+    finally:
+        output.stop()
